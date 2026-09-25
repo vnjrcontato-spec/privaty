@@ -1,0 +1,28 @@
+{
+  "name": "strikepoint",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n GAME,WEB -c yellow,cyan \"tsx watch server/src/index.ts\" \"vite --host 0.0.0.0\"",
+    "build": "vite build && tsc -p server/tsconfig.json",
+    "start": "node dist/backend/server/src/index.js",
+    "check": "tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p server/tsconfig.json"
+  },
+  "dependencies": {
+    "three": "^0.180.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/three": "^0.180.0",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^9.2.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5"
+  }
+}

@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: strikepoint
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
