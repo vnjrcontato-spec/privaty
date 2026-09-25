@@ -15,6 +15,7 @@ interface Tracer {
 }
 
 type SendFunction = (message: object) => void;
+type GraphicsQuality = "LOW" | "BALANCED" | "HIGH";
 
 const TEAM_COLORS = { ALPHA: 0xe6a536, BRAVO: 0x52a6c9 };
 
@@ -29,7 +30,9 @@ export class GameClient {
   private readonly pressed = new Set<string>();
   private readonly raycaster = new THREE.Raycaster();
   private readonly gunRoot = new THREE.Group();
+  private readonly pointLights: THREE.PointLight[] = [];
   private readonly flashMesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  private keyLight: THREE.DirectionalLight | null = null;
   private localId = "";
   private sendFn: SendFunction = () => undefined;
   private currentState: GameState | null = null;
@@ -44,19 +47,29 @@ export class GameClient {
   private movementInput: PlayerInput = { ...EMPTY_INPUT };
   private weaponId: WeaponId = "AR12";
   private scoreBoardVisible = false;
+  private pauseMenuOpen = false;
+  private pauseOpenedAt = 0;
+  private mouseSensitivity = 1;
+  private invertY = false;
+  private gunKick = 0;
+  private mouseSwayX = 0;
+  private mouseSwayY = 0;
   private scoreboardCallback: (visible: boolean) => void = () => undefined;
   private toastCallback: (message: string) => void = () => undefined;
+  private pauseCallback: (paused: boolean) => void = () => undefined;
   private context: AudioContext | null = null;
   private localName = "PLAYER";
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.2));
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.14;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene.background = new THREE.Color(0x10161a);
     this.scene.fog = new THREE.Fog(0x10161a, 26, 68);
     this.camera.rotation.order = "YXZ";
@@ -83,9 +96,51 @@ export class GameClient {
     this.sendFn = sender;
   }
 
-  setCallbacks(callbacks: { scoreboard?: (visible: boolean) => void; toast?: (message: string) => void }): void {
+  setCallbacks(callbacks: { scoreboard?: (visible: boolean) => void; toast?: (message: string) => void; pause?: (paused: boolean) => void }): void {
     this.scoreboardCallback = callbacks.scoreboard || (() => undefined);
     this.toastCallback = callbacks.toast || (() => undefined);
+    this.pauseCallback = callbacks.pause || (() => undefined);
+  }
+
+  setMouseSettings(sensitivity: number, invertY: boolean): void {
+    this.mouseSensitivity = Math.min(5, Math.max(0.1, Number.isFinite(sensitivity) ? sensitivity : 1));
+    this.invertY = invertY;
+  }
+
+  setGraphicsQuality(quality: GraphicsQuality): void {
+    const scale = quality === "LOW" ? 0.8 : quality === "HIGH" ? 1.35 : 1;
+    this.renderer.setPixelRatio(Math.min((window.devicePixelRatio || 1) * scale, 1.6));
+    this.renderer.setSize(window.innerWidth, window.innerHeight, false);
+    const shadows = quality !== "LOW";
+    this.renderer.shadowMap.enabled = shadows;
+    for (const light of this.pointLights) light.visible = quality !== "LOW";
+    if (this.keyLight) {
+      this.keyLight.castShadow = shadows;
+      const mapSize = quality === "HIGH" ? 1536 : 1024;
+      this.keyLight.shadow.mapSize.set(mapSize, mapSize);
+      this.keyLight.shadow.needsUpdate = true;
+    }
+  }
+
+  resume(): void {
+    if (!this.pauseMenuOpen) return;
+    this.pauseMenuOpen = false;
+    this.pauseCallback(false);
+    const local = this.currentState?.players.find((player) => player.id === this.localId);
+    if (local?.alive) this.captureMouse();
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.pauseMenuOpen === paused) return;
+    this.pauseMenuOpen = paused;
+    if (paused) this.pauseOpenedAt = performance.now();
+    this.firing = false;
+    this.pressed.clear();
+    this.jumpPulse = false;
+    this.scoreBoardVisible = false;
+    this.scoreboardCallback(false);
+    if (paused && document.pointerLockElement === this.canvas) document.exitPointerLock();
+    this.pauseCallback(paused);
   }
 
   setIdentity(playerId: string, name: string): void {
@@ -95,6 +150,8 @@ export class GameClient {
 
   setState(state: GameState): void {
     this.currentState = state;
+    if (state.phase !== "ROUND_ACTIVE" && this.pauseMenuOpen) this.setPaused(false);
+    if (state.phase !== "ROUND_ACTIVE" && document.pointerLockElement === this.canvas) document.exitPointerLock();
     const local = state.players.find((player) => player.id === this.localId);
     if (local) {
       const authoritative = new THREE.Vector3(local.x, local.y, local.z);
@@ -138,6 +195,7 @@ export class GameClient {
       this.addTracer(event.start, event.end, event.playerId === this.localId);
       if (event.playerId !== this.localId) this.playShotSound();
       if (event.playerId === this.localId) {
+        this.gunKick = Math.min(1, this.gunKick + 0.72);
         this.flashMesh.material.opacity = 0.9;
         window.setTimeout(() => { this.flashMesh.material.opacity = 0; }, 52);
       }
@@ -149,6 +207,8 @@ export class GameClient {
     }
     if (event.type === "hit" && event.attackerId === this.localId) {
       this.toastCallback(event.headshot ? "HEADSHOT" : "HIT  -" + event.damage);
+      document.querySelector(".crosshair")?.classList.add("confirmed-hit");
+      window.setTimeout(() => document.querySelector(".crosshair")?.classList.remove("confirmed-hit"), 135);
       return;
     }
     if (event.type === "weapon-switch" && event.playerId === this.localId) {
@@ -168,12 +228,14 @@ export class GameClient {
   }
 
   captureMouse(): void {
-    if (this.currentState?.phase === "ROUND_ACTIVE" && document.pointerLockElement !== this.canvas) {
+    const local = this.currentState?.players.find((player) => player.id === this.localId);
+    if (!this.pauseMenuOpen && local?.alive && this.currentState?.phase === "ROUND_ACTIVE" && document.pointerLockElement !== this.canvas) {
       void this.canvas.requestPointerLock();
     }
   }
 
   clearConnection(): void {
+    this.setPaused(false);
     this.currentState = null;
     this.localId = "";
     this.predictedReady = false;
@@ -189,14 +251,19 @@ export class GameClient {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.code === "Escape") {
+      event.preventDefault();
+      if (!event.repeat && this.currentState?.phase === "ROUND_ACTIVE") {
+        if (this.pauseMenuOpen && performance.now() - this.pauseOpenedAt > 250) this.resume();
+        else this.setPaused(true);
+      }
+      return;
+    }
+    if (this.pauseMenuOpen) return;
     if (event.code === "Tab" && this.currentState?.phase === "ROUND_ACTIVE") {
       event.preventDefault();
       this.scoreBoardVisible = true;
       this.scoreboardCallback(true);
-      return;
-    }
-    if (event.code === "Escape") {
-      this.firing = false;
       return;
     }
     if (document.pointerLockElement !== this.canvas || !this.currentState) return;
@@ -219,10 +286,13 @@ export class GameClient {
   };
 
   private readonly onMouseMove = (event: MouseEvent): void => {
-    if (document.pointerLockElement !== this.canvas) return;
-    const sensitivity = Number(localStorage.getItem("strikepoint_sensitivity") || "0.0021");
-    this.yaw -= event.movementX * sensitivity;
-    this.pitch = Math.max(-1.42, Math.min(1.42, this.pitch - event.movementY * sensitivity));
+    if (this.pauseMenuOpen || document.pointerLockElement !== this.canvas) return;
+    const sensitivity = 0.0021 * this.mouseSensitivity;
+    this.yaw += event.movementX * sensitivity;
+    const yDirection = this.invertY ? 1 : -1;
+    this.pitch = Math.max(-1.42, Math.min(1.42, this.pitch + event.movementY * sensitivity * yDirection));
+    this.mouseSwayX = THREE.MathUtils.clamp(this.mouseSwayX + event.movementX * 0.00013, -0.035, 0.035);
+    this.mouseSwayY = THREE.MathUtils.clamp(this.mouseSwayY + event.movementY * 0.00012, -0.025, 0.025);
     this.pressed.add("MouseLocked");
   };
 
@@ -230,6 +300,8 @@ export class GameClient {
     if (document.pointerLockElement !== this.canvas) {
       this.pressed.delete("MouseLocked");
       this.firing = false;
+      const local = this.currentState?.players.find((player) => player.id === this.localId);
+      if (!this.pauseMenuOpen && !document.hidden && local?.alive && this.currentState?.phase === "ROUND_ACTIVE") this.setPaused(true);
     }
   };
 
@@ -239,6 +311,7 @@ export class GameClient {
 
   private readonly onMouseDown = (event: MouseEvent): void => {
     if (event.button !== 0) return;
+    if (this.pauseMenuOpen) return;
     if (document.pointerLockElement !== this.canvas) {
       this.captureMouse();
       return;
@@ -261,7 +334,7 @@ export class GameClient {
   private readInput(): PlayerInput {
     const locked = document.pointerLockElement === this.canvas;
     const local = this.currentState?.players.find((player) => player.id === this.localId);
-    if (!locked || !this.currentState || this.currentState.phase !== "ROUND_ACTIVE" || !local?.alive) {
+    if (this.pauseMenuOpen || !locked || !this.currentState || this.currentState.phase !== "ROUND_ACTIVE" || !local?.alive) {
       return { ...EMPTY_INPUT, yaw: this.yaw, pitch: this.pitch };
     }
     return {
@@ -282,6 +355,7 @@ export class GameClient {
     const interval = this.weaponId === "AR12" ? 126 : 272;
     if (now < this.nextShotAt) return;
     this.nextShotAt = now + interval;
+    this.gunKick = Math.min(1, this.gunKick + 0.48);
     this.playShotSound();
     this.sendFn({ type: "shoot" });
   }
@@ -292,7 +366,8 @@ export class GameClient {
     if (this.currentState?.phase === "ROUND_ACTIVE" && this.localId) {
       const local = this.currentState.players.find((player) => player.id === this.localId);
       this.movementInput = this.readInput();
-      if (this.predictedReady && local?.alive) {
+      const isMoving = !this.pauseMenuOpen && (this.movementInput.forward || this.movementInput.backward || this.movementInput.left || this.movementInput.right);
+      if (!this.pauseMenuOpen && this.predictedReady && local?.alive) {
         const movement = movePlayer(
           { x: this.predicted.x, y: this.predicted.y, z: this.predicted.z },
           this.localVerticalVelocity,
@@ -304,16 +379,23 @@ export class GameClient {
         this.localVerticalVelocity = movement.velocityY;
         this.localGrounded = movement.grounded;
       }
-      this.camera.position.set(this.predicted.x, this.predicted.y + (this.movementInput.crouch ? 1.12 : 1.58), this.predicted.z);
+      const bob = isMoving ? Math.sin(now * 0.012) * 0.018 : 0;
+      this.camera.position.set(this.predicted.x, this.predicted.y + (this.movementInput.crouch ? 1.12 : 1.58) + bob, this.predicted.z);
       this.camera.rotation.set(this.pitch, -this.yaw, 0);
-      if (local?.alive && now - this.lastInputAt >= 32) {
+      if (!this.pauseMenuOpen && local?.alive && now - this.lastInputAt >= 32) {
         this.sendFn({ type: "input", input: this.movementInput });
         this.lastInputAt = now;
         this.jumpPulse = false;
       }
-      if (this.firing && local?.alive) this.fireIfReady();
+      if (!this.pauseMenuOpen && this.firing && local?.alive) this.fireIfReady();
       this.flashMesh.material.opacity = Math.max(0, this.flashMesh.material.opacity - delta * 9);
     }
+    this.gunKick = Math.max(0, this.gunKick - delta * 3.6);
+    const movingGun = !this.pauseMenuOpen && (this.movementInput.forward || this.movementInput.backward || this.movementInput.left || this.movementInput.right);
+    const bobGun = movingGun ? Math.sin(now * 0.012) * 0.012 : 0;
+    this.gunRoot.position.set(this.mouseSwayX, bobGun - this.gunKick * 0.045 + this.mouseSwayY, this.gunKick * 0.12);
+    this.mouseSwayX *= Math.exp(-8 * delta);
+    this.mouseSwayY *= Math.exp(-8 * delta);
     for (const avatar of this.avatars.values()) {
       avatar.root.position.lerp(avatar.target, 1 - Math.exp(-13 * delta));
     }
@@ -336,17 +418,32 @@ export class GameClient {
     this.scene.add(hemi);
     const key = new THREE.DirectionalLight(0xffdca0, 3.3);
     key.position.set(-10, 22, -8);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.camera.left = -30;
+    key.shadow.camera.right = 30;
+    key.shadow.camera.top = 30;
+    key.shadow.camera.bottom = -30;
+    key.shadow.camera.near = 1;
+    key.shadow.camera.far = 55;
+    key.shadow.bias = -0.00035;
+    key.shadow.normalBias = 0.025;
+    key.shadow.radius = 3;
+    this.keyLight = key;
     this.scene.add(key);
     const cool = new THREE.PointLight(0x65a4ad, 65, 48, 1.7);
     cool.position.set(12, 8, 6);
+    this.pointLights.push(cool);
     this.scene.add(cool);
 
+    const floorTexture = this.createFloorTexture();
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(54, 54),
-      new THREE.MeshStandardMaterial({ color: 0x333a3a, roughness: 0.95, metalness: 0.04 }),
+      new THREE.MeshStandardMaterial({ color: 0x9aa19a, map: floorTexture, roughness: 0.94, metalness: 0.08 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.035;
+    ground.receiveShadow = true;
     this.scene.add(ground);
 
     const grid = new THREE.GridHelper(50, 50, 0x53615d, 0x424c49);
@@ -404,6 +501,57 @@ export class GameClient {
     siteA.position.set(-17, 0.035, -7);
     const siteB = this.createSiteMarker(17, 0xc38b43, "B");
     siteB.position.set(17, 0.035, 7);
+
+    const lanePaint = new THREE.MeshStandardMaterial({ color: 0x9b7434, roughness: 0.78, metalness: 0.12 });
+    for (const x of [-21, 21]) {
+      this.addBox(0.07, 0.012, 45, x, 0.014, 0, lanePaint);
+      for (let z = -20; z <= 20; z += 4) this.addBox(0.27, 0.014, 0.7, x, 0.016, z, lanePaint);
+    }
+
+    this.scene.traverse((object) => {
+      if (object instanceof THREE.Mesh && !object.material.transparent) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+      }
+    });
+  }
+
+  private createFloorTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 512;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.fillStyle = "#555b55";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < 2300; i += 1) {
+        const shade = Math.random() > 0.55 ? 115 : 41;
+        context.fillStyle = `rgba(${shade},${shade + 4},${shade},${Math.random() * 0.12})`;
+        const width = 1 + Math.random() * 5;
+        const height = 1 + Math.random() * 3;
+        context.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, width, height);
+      }
+      context.strokeStyle = "rgba(25,31,30,.26)";
+      context.lineWidth = 1;
+      for (let x = 0; x < 512; x += 64) {
+        context.beginPath();
+        context.moveTo(x, 0);
+        context.lineTo(x, 512);
+        context.stroke();
+      }
+      for (let y = 0; y < 512; y += 64) {
+        context.beginPath();
+        context.moveTo(0, y);
+        context.lineTo(512, y);
+        context.stroke();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(8, 8);
+    return texture;
   }
 
   private addBox(width: number, height: number, depth: number, x: number, y: number, z: number, material: THREE.Material): void {
@@ -453,6 +601,7 @@ export class GameClient {
     this.scene.add(fixture);
     const light = new THREE.PointLight(0xbac4a2, 11, 9, 2);
     light.position.set(x, 3.7, z);
+    this.pointLights.push(light);
     this.scene.add(light);
   }
 
@@ -515,6 +664,20 @@ export class GameClient {
     const shoulder = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.12, 0.25), team);
     shoulder.position.set(0, 1.25, -0.11);
     root.add(shoulder);
+    const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.48, 0.2), dark);
+    backpack.position.set(0, 1.03, 0.19);
+    root.add(backpack);
+    const vestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.49, 0.31, 0.045), primary);
+    vestPlate.position.set(0, 1.03, -0.25);
+    root.add(vestPlate);
+    for (const side of [-1, 1]) {
+      const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.15, 0.09), dark);
+      pouch.position.set(side * 0.19, 0.82, -0.255);
+      root.add(pouch);
+      const shoulderPad = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, 0.28), team);
+      shoulderPad.position.set(side * 0.39, 1.2, -0.1);
+      root.add(shoulderPad);
+    }
     const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.12, 0.82), dark);
     rifle.position.set(0.33, 1.11, -0.35);
     root.add(rifle);
@@ -524,6 +687,12 @@ export class GameClient {
     root.add(name);
     root.position.set(player.x, player.y, player.z);
     root.rotation.y = -player.yaw;
+    root.traverse((object) => {
+      if (object instanceof THREE.Mesh && !object.material.transparent) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+      }
+    });
     return { root, target: new THREE.Vector3(player.x, player.y, player.z), body, name: player.name };
   }
 
@@ -575,10 +744,27 @@ export class GameClient {
       const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.22, 0.12), grip);
       magazine.position.set(0.36, -0.44, -0.55);
       this.gunRoot.add(magazine);
-      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.055, 0.16), accent);
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.055, 0.16), accent);
       sight.position.set(0.36, -0.17, -0.53);
       this.gunRoot.add(sight);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.022, 0.49), grip);
+      rail.position.set(0.36, -0.18, -0.61);
+      this.gunRoot.add(rail);
+      const optic = new THREE.Mesh(new THREE.CylinderGeometry(0.047, 0.047, 0.09, 10), grip);
+      optic.rotation.x = Math.PI / 2;
+      optic.position.set(0.36, -0.12, -0.54);
+      this.gunRoot.add(optic);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.031, 12), new THREE.MeshBasicMaterial({ color: 0x83b2b2, transparent: true, opacity: 0.8 }));
+      lens.position.set(0.36, -0.12, -0.592);
+      this.gunRoot.add(lens);
+      const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.15, 0.09), grip);
+      foregrip.position.set(0.36, -0.38, -0.77);
+      this.gunRoot.add(foregrip);
     }
+    const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.065, 8), accent);
+    muzzle.rotation.x = Math.PI / 2;
+    muzzle.position.set(0.36, -0.25, isRifle ? -1.17 : -0.97);
+    this.gunRoot.add(muzzle);
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.16, bodyLength * 0.65), accent);
     stripe.position.set(0.43, -0.27, -0.56);
     this.gunRoot.add(stripe);
