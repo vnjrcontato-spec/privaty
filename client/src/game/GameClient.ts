@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { COLLIDERS, movePlayer } from "../../../shared/src/movement";
+import { calculateWeaponAccuracy } from "../../../shared/src/accuracy";
 import { EMPTY_INPUT, type GameState, type PlayerInput, type PlayerPosition, type PublicPlayer, type ServerEvent, type WeaponId } from "../../../shared/src/protocol";
 
 interface Avatar {
@@ -21,7 +22,7 @@ const TEAM_COLORS = { ALPHA: 0xe6a536, BRAVO: 0x52a6c9 };
 
 export class GameClient {
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.08, 120);
+  readonly camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.08, 120);
   readonly renderer: THREE.WebGLRenderer;
   readonly canvas: HTMLCanvasElement;
   private readonly clock = new THREE.Clock();
@@ -49,6 +50,17 @@ export class GameClient {
   private scoreBoardVisible = false;
   private pauseMenuOpen = false;
   private pauseOpenedAt = 0;
+  private localVelocityX = 0;
+  private localVelocityZ = 0;
+  private localMaxSpeed = 4.13;
+  private jumpBufferSeconds = 0;
+  private dynamicCrosshair = true;
+  private movementDebugEnabled = false;
+  private performanceOverlayEnabled = false;
+  private lastOverlayUpdateAt = 0;
+  private smoothedFps = 60;
+  private localBurstShots = 0;
+  private lastLocalShotAt = 0;
   private mouseSensitivity = 1;
   private invertY = false;
   private gunKick = 0;
@@ -57,8 +69,9 @@ export class GameClient {
   private scoreboardCallback: (visible: boolean) => void = () => undefined;
   private toastCallback: (message: string) => void = () => undefined;
   private pauseCallback: (paused: boolean) => void = () => undefined;
+  private telemetryCallback: (movement: string | null, performance: string | null) => void = () => undefined;
   private context: AudioContext | null = null;
-  private localName = "PLAYER";
+  private localName = "JOGADOR";
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -96,10 +109,23 @@ export class GameClient {
     this.sendFn = sender;
   }
 
-  setCallbacks(callbacks: { scoreboard?: (visible: boolean) => void; toast?: (message: string) => void; pause?: (paused: boolean) => void }): void {
+  setCallbacks(callbacks: { scoreboard?: (visible: boolean) => void; toast?: (message: string) => void; pause?: (paused: boolean) => void; telemetry?: (movement: string | null, performance: string | null) => void }): void {
     this.scoreboardCallback = callbacks.scoreboard || (() => undefined);
     this.toastCallback = callbacks.toast || (() => undefined);
     this.pauseCallback = callbacks.pause || (() => undefined);
+    this.telemetryCallback = callbacks.telemetry || (() => undefined);
+  }
+
+  setFieldOfView(value: number): void {
+    this.camera.fov = THREE.MathUtils.clamp(Number.isFinite(value) ? value : 90, 70, 110);
+    this.camera.updateProjectionMatrix();
+  }
+
+  setHudSettings(dynamicCrosshair: boolean, movementDebug: boolean, performanceOverlay: boolean): void {
+    this.dynamicCrosshair = dynamicCrosshair;
+    this.movementDebugEnabled = movementDebug;
+    this.performanceOverlayEnabled = performanceOverlay;
+    this.telemetryCallback(null, null);
   }
 
   setMouseSettings(sensitivity: number, invertY: boolean): void {
@@ -154,13 +180,25 @@ export class GameClient {
     if (state.phase !== "ROUND_ACTIVE" && document.pointerLockElement === this.canvas) document.exitPointerLock();
     const local = state.players.find((player) => player.id === this.localId);
     if (local) {
-      const authoritative = new THREE.Vector3(local.x, local.y, local.z);
       if (!this.predictedReady) {
-        this.predicted.copy(authoritative);
+        this.predicted.set(local.x, local.y, local.z);
         this.predictedReady = true;
       } else {
-        this.predicted.lerp(authoritative, 0.28);
+        const errorX = local.x - this.predicted.x;
+        const errorY = local.y - this.predicted.y;
+        const errorZ = local.z - this.predicted.z;
+        if (errorX * errorX + errorY * errorY + errorZ * errorZ > 4) {
+          this.predicted.set(local.x, local.y, local.z);
+        } else {
+          this.predicted.x += errorX * 0.24;
+          this.predicted.y += errorY * 0.24;
+          this.predicted.z += errorZ * 0.24;
+        }
       }
+      this.localVelocityX += (local.velocityX - this.localVelocityX) * 0.35;
+      this.localVelocityZ += (local.velocityZ - this.localVelocityZ) * 0.35;
+      this.localVerticalVelocity += (local.velocityY - this.localVerticalVelocity) * 0.35;
+      this.localGrounded = local.grounded;
       if (!this.pressed.has("MouseLocked")) {
         this.yaw = local.yaw;
       }
@@ -198,15 +236,18 @@ export class GameClient {
         this.gunKick = Math.min(1, this.gunKick + 0.72);
         this.flashMesh.material.opacity = 0.9;
         window.setTimeout(() => { this.flashMesh.material.opacity = 0; }, 52);
+        const crosshair = document.querySelector<HTMLElement>(".crosshair");
+        crosshair?.style.setProperty("--server-spread", `${event.spread * 120}px`);
+        window.setTimeout(() => crosshair?.style.setProperty("--server-spread", "0px"), 145);
       }
       return;
     }
     if (event.type === "hit" && event.targetId === this.localId) {
-      this.toastCallback("TAKING FIRE  -" + event.damage + (event.headshot ? "  /  HEADSHOT" : ""));
+      this.toastCallback("VOCÊ FOI ATINGIDO  -" + event.damage + (event.headshot ? "  /  TIRO NA CABEÇA" : ""));
       return;
     }
     if (event.type === "hit" && event.attackerId === this.localId) {
-      this.toastCallback(event.headshot ? "HEADSHOT" : "HIT  -" + event.damage);
+      this.toastCallback(event.headshot ? "TIRO NA CABEÇA" : "ACERTO  -" + event.damage);
       document.querySelector(".crosshair")?.classList.add("confirmed-hit");
       window.setTimeout(() => document.querySelector(".crosshair")?.classList.remove("confirmed-hit"), 135);
       return;
@@ -217,13 +258,17 @@ export class GameClient {
       return;
     }
     if (event.type === "reload" && event.playerId === this.localId) {
-      this.toastCallback("RELOADING");
+      this.toastCallback("RECARREGANDO");
     }
     if (event.type === "round-start") {
       this.pressed.clear();
       this.movementInput = { ...EMPTY_INPUT, yaw: this.yaw, pitch: this.pitch };
       this.localVerticalVelocity = 0;
       this.localGrounded = true;
+      this.localVelocityX = 0;
+      this.localVelocityZ = 0;
+      this.jumpBufferSeconds = 0;
+      this.localBurstShots = 0;
     }
   }
 
@@ -239,6 +284,10 @@ export class GameClient {
     this.currentState = null;
     this.localId = "";
     this.predictedReady = false;
+    this.localVelocityX = 0;
+    this.localVelocityZ = 0;
+    this.localVerticalVelocity = 0;
+    this.jumpBufferSeconds = 0;
     this.firing = false;
     for (const avatar of this.avatars.values()) this.scene.remove(avatar.root);
     this.avatars.clear();
@@ -342,7 +391,7 @@ export class GameClient {
       backward: this.pressed.has("KeyS"),
       left: this.pressed.has("KeyA"),
       right: this.pressed.has("KeyD"),
-      sprint: this.pressed.has("ShiftLeft") || this.pressed.has("ShiftRight"),
+      walk: this.pressed.has("ShiftLeft") || this.pressed.has("ShiftRight"),
       crouch: this.pressed.has("ControlLeft") || this.pressed.has("ControlRight"),
       jump: this.jumpPulse,
       yaw: this.yaw,
@@ -355,6 +404,9 @@ export class GameClient {
     const interval = this.weaponId === "AR12" ? 126 : 272;
     if (now < this.nextShotAt) return;
     this.nextShotAt = now + interval;
+    if (now - this.lastLocalShotAt > 520) this.localBurstShots = 0;
+    this.localBurstShots = Math.min(10, this.localBurstShots + 1);
+    this.lastLocalShotAt = now;
     this.gunKick = Math.min(1, this.gunKick + 0.48);
     this.playShotSound();
     this.sendFn({ type: "shoot" });
@@ -370,17 +422,26 @@ export class GameClient {
       if (!this.pauseMenuOpen && this.predictedReady && local?.alive) {
         const movement = movePlayer(
           { x: this.predicted.x, y: this.predicted.y, z: this.predicted.z },
+          this.localVelocityX,
+          this.localVelocityZ,
           this.localVerticalVelocity,
           this.localGrounded,
+          this.jumpBufferSeconds,
           this.movementInput,
           delta,
+          this.weaponId,
         );
         this.predicted.set(movement.position.x, movement.position.y, movement.position.z);
+        this.localVelocityX = movement.velocityX;
+        this.localVelocityZ = movement.velocityZ;
+        this.localMaxSpeed = movement.maxSpeed;
         this.localVerticalVelocity = movement.velocityY;
         this.localGrounded = movement.grounded;
+        this.jumpBufferSeconds = movement.jumpBufferSeconds;
       }
-      const bob = isMoving ? Math.sin(now * 0.012) * 0.018 : 0;
-      this.camera.position.set(this.predicted.x, this.predicted.y + (this.movementInput.crouch ? 1.12 : 1.58) + bob, this.predicted.z);
+      const bob = isMoving && this.localGrounded ? Math.sin(now * 0.012) * 0.018 : 0;
+      const targetCameraY = this.predicted.y + (this.movementInput.crouch ? 1.12 : 1.58) + bob;
+      this.camera.position.set(this.predicted.x, THREE.MathUtils.damp(this.camera.position.y, targetCameraY, 16, delta), this.predicted.z);
       this.camera.rotation.set(this.pitch, -this.yaw, 0);
       if (!this.pauseMenuOpen && local?.alive && now - this.lastInputAt >= 32) {
         this.sendFn({ type: "input", input: this.movementInput });
@@ -408,6 +469,35 @@ export class GameClient {
       }
     }
     this.renderer.render(this.scene, this.camera);
+    const instantaneousFps = delta > 0 ? 1 / delta : this.smoothedFps;
+    this.smoothedFps += (instantaneousFps - this.smoothedFps) * 0.08;
+    if (now - this.lastOverlayUpdateAt >= 120) {
+      this.lastOverlayUpdateAt = now;
+      const horizontalSpeed = Math.hypot(this.localVelocityX, this.localVelocityZ);
+      const accuracy = calculateWeaponAccuracy({
+        horizontalSpeed,
+        grounded: this.localGrounded,
+        crouching: this.movementInput.crouch,
+        weapon: this.weaponId,
+        burstShots: this.localBurstShots,
+      });
+      const crosshair = document.querySelector<HTMLElement>(".crosshair");
+      if (crosshair) {
+        const motion = this.dynamicCrosshair ? accuracy.movementPenalty * 9 + accuracy.airPenalty * 90 : 0;
+        const burst = this.dynamicCrosshair ? accuracy.burstPenalty * 100 : 0;
+        crosshair.style.setProperty("--crosshair-gap", `${4 + motion + burst}px`);
+      }
+      const movementText = this.movementDebugEnabled
+        ? `VELOCIDADE ${horizontalSpeed.toFixed(2)} m/s  ·  MÁX ${this.localMaxSpeed.toFixed(2)} m/s\nPENALIDADE ${Math.round(accuracy.movementPenalty * 100)}%  ·  DISPERSÃO BASE ${(accuracy.baseSpread * 57.3).toFixed(2)}°  ·  FINAL ${(accuracy.finalSpread * 57.3).toFixed(2)}°\n${this.localGrounded ? "NO CHÃO" : "NO AR"}  ·  ${this.movementInput.crouch ? "AGACHADO" : "EM PÉ"}`
+        : null;
+      const memory = this.renderer.info.memory;
+      const browserMemory = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
+      const heapText = browserMemory ? `  ·  MEMÓRIA ${(browserMemory.usedJSHeapSize / 1_048_576).toFixed(0)} MB` : "";
+      const performanceText = this.performanceOverlayEnabled
+        ? `FPS ${Math.round(this.smoothedFps)}  ·  DESENHOS ${this.renderer.info.render.calls}  ·  TRIÂNGULOS ${this.renderer.info.render.triangles}\nGEOMETRIAS ${memory.geometries}  ·  TEXTURAS ${memory.textures}${heapText}  ·  TICK DO SERVIDOR 20/s`
+        : null;
+      this.telemetryCallback(movementText, performanceText);
+    }
   };
 
   private localVerticalVelocity = 0;
@@ -773,7 +863,7 @@ export class GameClient {
 
   private updateWeaponName(weapon: WeaponId): void {
     const name = document.getElementById("weapon-name");
-    if (name) name.textContent = weapon === "AR12" ? "AR-12 / ASSAULT RIFLE" : "V9 / SIDEARM";
+    if (name) name.textContent = weapon === "AR12" ? "AR-12 / FUZIL DE ASSALTO" : "V9 / PISTOLA";
   }
 
   private addTracer(start: PlayerPosition, end: PlayerPosition, local: boolean): void {

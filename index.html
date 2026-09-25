@@ -1,123 +1,132 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#090c0f" />
-    <meta name="description" content="StrikePoint — tactical multiplayer FPS for the browser." />
+    <meta name="description" content="StrikePoint — FPS tático multijogador para navegador." />
     <title>STRIKEPOINT // Tactical FPS</title>
   </head>
   <body>
     <div id="app">
-      <canvas id="game-canvas" aria-label="StrikePoint game view"></canvas>
+      <canvas id="game-canvas" aria-label="Visão da partida StrikePoint" data-i18n-aria-label="canvas.label"></canvas>
       <div id="menu-overlay">
         <header class="topbar">
-          <a class="brand" href="#" aria-label="StrikePoint home">
+          <a class="brand" href="#" aria-label="Página inicial do StrikePoint" data-i18n-aria-label="brand.home">
             <span class="brand-mark"><i></i><i></i><i></i></span>
-            <span>STRIKE<span class="brand-light">POINT</span><small>NETWORK COMBAT SYSTEMS</small></span>
+            <span>STRIKE<span class="brand-light">POINT</span><small data-i18n="brand.system">SISTEMAS DE COMBATE EM REDE</small></span>
           </a>
           <div class="topbar-right">
-            <span class="status-dot"></span><span id="connection-label">OFFLINE</span>
+            <span class="status-dot"></span><span id="connection-label" data-i18n="connection.offline">DESCONECTADO</span>
             <span class="top-divider"></span>
-            <span class="build-label">BUILD 0.1.0 <b>WEB MVP</b></span>
+            <span class="build-label">VERSÃO 0.1.0 <b data-i18n="build.web">VERSÃO WEB</b></span>
           </div>
         </header>
 
         <main class="menu-layout">
           <section class="hero">
-            <div class="eyebrow"><span class="eyebrow-line"></span>TACTICAL // MULTIPLAYER FPS</div>
-            <h1>HOLD THE<br /><em>LINE.</em></h1>
-            <p class="hero-copy">Squad up. Take the site. Outplay the opposition.<br />One server, one fight, right in your browser.</p>
+            <div class="eyebrow"><span class="eyebrow-line"></span><span data-i18n="menu.eyebrow">FPS TÁTICO // MULTIJOGADOR</span></div>
+            <h1><span data-i18n="menu.headline">MANTENHA A</span><br /><em data-i18n="menu.headlineLine">LINHA.</em></h1>
+            <p class="hero-copy" data-i18n="menu.copy">Reúna sua equipe. Domine o objetivo. Supere o adversário.<br />Uma partida, um combate, direto no navegador.</p>
             <div class="hero-meta">
-              <div><span>OPERATION</span><strong>IRON YARD</strong></div>
-              <div><span>MODE</span><strong>TEAM ELIMINATION</strong></div>
-              <div><span>DEPLOYMENT</span><strong>NETWORK SERVER</strong></div>
+              <div><span data-i18n="menu.operation">OPERAÇÃO</span><strong>IRON YARD</strong></div>
+              <div><span data-i18n="menu.mode">MODALIDADE</span><strong data-i18n="menu.modeValue">ELIMINAÇÃO EM EQUIPE</strong></div>
+              <div><span data-i18n="menu.deployment">HOSPEDAGEM</span><strong data-i18n="menu.deploymentValue">SERVIDOR ONLINE</strong></div>
             </div>
-            <div class="control-strip"><span class="keycap">W</span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span><span>MOVE</span><span class="control-gap"></span><span class="keycap wide">MOUSE</span><span>LOOK</span></div>
+            <div class="control-strip"><span class="keycap">W</span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span><span data-i18n="controls.move">MOVER</span><span class="control-gap"></span><span class="keycap wide">MOUSE</span><span data-i18n="controls.look">OLHAR</span></div>
           </section>
 
           <aside class="connect-card">
-            <div class="card-header"><div><span class="section-kicker">NETWORK ACCESS</span><h2>Join the fight</h2></div><span class="signal-mark">01 <b>/</b> SERVER</span></div>
-            <label class="field-label" for="player-name">CALLSIGN</label>
+            <div class="card-header"><div><span class="section-kicker" data-i18n="network.access">ACESSO À REDE</span><h2 data-i18n="network.joinTitle">Entre no combate</h2></div><span class="signal-mark">01 <b>/</b> SERVIDOR</span></div>
+            <label class="field-label" for="player-name" data-i18n="network.callsign">NOME DE GUERRA</label>
             <input id="player-name" maxlength="18" value="RAVEN" autocomplete="nickname" />
-            <label class="field-label" for="server-address">SERVER ADDRESS</label>
-            <div class="address-wrap"><span class="address-icon">⌁</span><input id="server-address" value="" placeholder="This website's server" autocomplete="url" /></div>
-            <p class="field-help">The hosted server is selected automatically. For a LAN match, enter the host's IP, for example <b>192.168.0.10:3000</b>.</p>
+            <label class="field-label" for="server-address" data-i18n="network.address">ENDEREÇO DO SERVIDOR</label>
+            <div class="address-wrap"><span class="address-icon">⌁</span><input id="server-address" value="" placeholder="Servidor deste site" data-i18n-placeholder="network.addressPlaceholder" autocomplete="url" /></div>
+            <p class="field-help"><span data-i18n="network.addressHelp">O servidor hospedado é selecionado automaticamente. Para uma partida na rede local, informe o IP do anfitrião, por exemplo</span> <b>192.168.0.10:3000</b>.</p>
             <div class="button-row">
-              <button id="join-button" class="button button-ghost"><span>JOIN SERVER</span><b>↗</b></button>
-              <button id="host-button" class="button button-primary"><span>HOST MATCH</span><b>→</b></button>
+              <button id="join-button" class="button button-ghost"><span data-i18n="network.join">ENTRAR NO SERVIDOR</span><b>↗</b></button>
+              <button id="host-button" class="button button-primary"><span data-i18n="network.host">CRIAR PARTIDA</span><b>→</b></button>
             </div>
-            <div class="card-foot"><span class="pulse"></span><span id="server-status">Waiting for connection</span><span class="card-foot-right">NO AUTO DISCOVERY</span></div>
+            <div class="card-foot"><span class="pulse"></span><span id="server-status" data-i18n="network.waiting">Aguardando conexão</span><span class="card-foot-right" data-i18n="network.discovery">SEM BUSCA AUTOMÁTICA</span></div>
           </aside>
 
           <section id="lobby-panel" class="lobby-panel is-hidden">
-            <div class="lobby-heading"><div><span class="section-kicker">SERVER // NETWORK-01</span><h2>Match lobby</h2></div><span id="lobby-phase" class="phase-badge">WAITING</span></div>
-            <div class="lobby-stats"><span>MAP <b>IRON YARD</b></span><span>MODE <b>ELIMINATION</b></span><span>PING <b id="ping-value">-- ms</b></span></div>
+            <div class="lobby-heading"><div><span class="section-kicker">SERVIDOR // REDE-01</span><h2 data-i18n="lobby.title">Sala de espera</h2></div><span id="lobby-phase" class="phase-badge" data-i18n="lobby.phaseWaiting">AGUARDANDO</span></div>
+            <div class="lobby-stats"><span><i data-i18n="lobby.map">MAPA</i><b>IRON YARD</b></span><span><i data-i18n="lobby.mode">MODALIDADE</i><b data-i18n="lobby.elimination">ELIMINAÇÃO</b></span><span><i data-i18n="lobby.ping">LATÊNCIA</i><b id="ping-value">-- ms</b></span></div>
             <div class="team-columns">
-              <div class="team-column alpha"><div class="team-title"><span>ALPHA</span><b id="alpha-count">0</b></div><div id="alpha-players" class="player-list"></div><button id="alpha-team" class="team-button">JOIN ALPHA</button></div>
-              <div class="team-column bravo"><div class="team-title"><span>BRAVO</span><b id="bravo-count">0</b></div><div id="bravo-players" class="player-list"></div><button id="bravo-team" class="team-button">JOIN BRAVO</button></div>
+              <div class="team-column alpha"><div class="team-title"><span data-i18n="lobby.alpha">ALFA</span><b id="alpha-count">0</b></div><div id="alpha-players" class="player-list"></div><button id="alpha-team" class="team-button" data-i18n="lobby.joinAlpha">ENTRAR NA ALFA</button></div>
+              <div class="team-column bravo"><div class="team-title"><span data-i18n="lobby.bravo">BRAVO</span><b id="bravo-count">0</b></div><div id="bravo-players" class="player-list"></div><button id="bravo-team" class="team-button" data-i18n="lobby.joinBravo">ENTRAR NA BRAVO</button></div>
             </div>
-            <button id="start-button" class="button button-primary start-button"><span>START MATCH</span><b>→</b></button>
-            <p id="lobby-help" class="lobby-help">Host a match, then share the server address with players on your network.</p>
+            <button id="start-button" class="button button-primary start-button"><span data-i18n="lobby.start">INICIAR PARTIDA</span><b>→</b></button>
+            <p id="lobby-help" class="lobby-help">Compartilhe o endereço do servidor com as outras pessoas.</p>
           </section>
         </main>
-        <footer class="menu-footer"><span>STRIKEPOINT / INDEPENDENT PROJECT</span><span>PROTOCOL <b>SP-1</b></span><span>DESKTOP · KEYBOARD + MOUSE</span></footer>
+        <footer class="menu-footer"><span data-i18n="footer.project">STRIKEPOINT / PROJETO INDEPENDENTE</span><span>PROTOCOLO <b>SP-2</b></span><span data-i18n="footer.controls">COMPUTADOR · TECLADO + MOUSE</span></footer>
       </div>
 
       <div id="hud" class="is-hidden">
         <div class="hud-top">
-          <div class="hud-team alpha-hud"><span>ALPHA</span><b id="score-alpha">0</b></div>
-          <div class="hud-match"><span id="round-label">ROUND 01</span><b id="round-timer">01:30</b><small id="map-label">IRON YARD</small></div>
+          <div class="hud-team alpha-hud"><span data-i18n="lobby.alpha">ALFA</span><b id="score-alpha">0</b></div>
+          <div class="hud-match"><span id="round-label">RODADA 01</span><b id="round-timer">01:30</b><small id="map-label">IRON YARD</small></div>
           <div class="hud-team bravo-hud"><b id="score-bravo">0</b><span>BRAVO</span></div>
         </div>
         <div class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+        <div id="movement-debug" class="telemetry-panel is-hidden"></div>
+        <div id="performance-panel" class="telemetry-panel performance-panel is-hidden"></div>
         <div id="center-message" class="center-message"></div>
         <div id="killfeed" class="killfeed"></div>
         <div class="hud-bottom">
-          <div class="health-block"><span>VITALS</span><b id="health-value">100</b><div class="health-bar"><i id="health-bar-fill"></i></div></div>
-          <div class="weapon-block"><span id="weapon-name">AR-12 / ASSAULT RIFLE</span><b id="ammo-value">30 <small>/ 90</small></b><small id="weapon-hint">1 RIFLE&nbsp;&nbsp; 2 SIDEARM&nbsp;&nbsp; R RELOAD</small></div>
-          <div class="team-chip"><i id="team-chip-dot"></i><span id="team-chip-label">ALPHA</span><small id="ping-hud">-- MS</small></div>
+          <div class="health-block"><span data-i18n="hud.vitals">VIDA</span><b id="health-value">100</b><div class="health-bar"><i id="health-bar-fill"></i></div></div>
+          <div class="weapon-block"><span id="weapon-name">AR-12 / FUZIL DE ASSALTO</span><b id="ammo-value">30 <small>/ 90</small></b><small id="weapon-hint" data-i18n="hud.weaponHint">1 FUZIL&nbsp;&nbsp; 2 PISTOLA&nbsp;&nbsp; R RECARREGAR</small></div>
+          <div class="team-chip"><i id="team-chip-dot"></i><span id="team-chip-label">ALFA</span><small id="ping-hud">-- MS</small></div>
         </div>
-        <div class="hud-tip" id="hud-tip">CLICK TO CAPTURE MOUSE · ESC FOR PAUSE MENU</div>
+        <div class="hud-tip" id="hud-tip" data-i18n="hud.tip">CLIQUE PARA CAPTURAR O MOUSE · ESC PARA PAUSAR</div>
         <div id="scoreboard" class="scoreboard is-hidden">
-          <div class="scoreboard-head"><span>PLAYER</span><span>TEAM</span><span>K</span><span>D</span><span>HP</span></div>
+          <div class="scoreboard-head"><span data-i18n="scoreboard.player">JOGADOR</span><span data-i18n="scoreboard.team">EQUIPE</span><span>E</span><span>M</span><span data-i18n="scoreboard.hp">VIDA</span></div>
           <div id="scoreboard-rows"></div>
         </div>
       </div>
       <div id="pause-overlay" class="pause-overlay is-hidden" aria-hidden="true">
         <section class="pause-panel" role="dialog" aria-modal="true" aria-labelledby="pause-title">
-          <div class="pause-kicker"><span class="eyebrow-line"></span>STRIKEPOINT // FIELD MENU</div>
+          <div class="pause-kicker"><span class="eyebrow-line"></span><span data-i18n="pause.kicker">STRIKEPOINT // MENU DE CAMPO</span></div>
           <div id="pause-home">
-            <h2 id="pause-title">PAUSED</h2>
-            <p class="pause-note">This menu pauses your controls. The match continues for everyone.</p>
+            <h2 id="pause-title" data-i18n="pause.title">PAUSADO</h2>
+            <p class="pause-note" data-i18n="pause.note">Este menu pausa seus controles. A partida continua para as outras pessoas.</p>
             <div class="pause-actions">
-              <button id="resume-button" class="button button-primary"><span>RESUME MATCH</span><b>→</b></button>
-              <button id="settings-button" class="button button-ghost"><span>SETTINGS</span><b>⚙</b></button>
-              <button id="return-lobby-button" class="button button-ghost"><span>RETURN TO LOBBY</span><b>↩</b></button>
-              <button id="disconnect-button" class="button button-danger"><span>DISCONNECT</span><b>×</b></button>
+              <button id="resume-button" class="button button-primary"><span data-i18n="pause.resume">VOLTAR À PARTIDA</span><b>→</b></button>
+              <button id="settings-button" class="button button-ghost"><span data-i18n="pause.settings">CONFIGURAÇÕES</span><b>⚙</b></button>
+              <button id="return-lobby-button" class="button button-ghost"><span data-i18n="pause.returnLobby">VOLTAR À SALA</span><b>↩</b></button>
+              <button id="disconnect-button" class="button button-danger"><span data-i18n="pause.disconnect">DESCONECTAR</span><b>×</b></button>
             </div>
-            <div class="pause-footer"><span>ESC</span> RESUME <i></i> SERVER ROUND KEEPS RUNNING</div>
+            <div class="pause-footer"><span>ESC</span> <span data-i18n="pause.escape">VOLTAR</span> <i></i> <span data-i18n="pause.serverContinues">A RODADA CONTINUA NO SERVIDOR</span></div>
           </div>
           <div id="settings-panel" class="is-hidden">
-            <div class="settings-heading"><div><span class="section-kicker">PLAYER PREFERENCES</span><h3>Settings</h3></div><span class="settings-tab">CONTROLS + VIDEO</span></div>
+            <div class="settings-heading"><div><span class="section-kicker" data-i18n="settings.kicker">PREFERÊNCIAS DO JOGADOR</span><h3 data-i18n="settings.title">Configurações</h3></div><span class="settings-tab" data-i18n="settings.tab">CONTROLES + VÍDEO</span></div>
             <label class="setting-row" for="mouse-sensitivity">
-              <span><b>MOUSE SENSITIVITY</b><small>Horizontal and vertical look speed</small></span>
+              <span><b data-i18n="settings.sensitivity">SENSIBILIDADE DO MOUSE</b><small data-i18n="settings.sensitivityHelp">Velocidade horizontal e vertical da mira</small></span>
               <span class="setting-control"><output id="sensitivity-value" for="mouse-sensitivity">1.0</output><input id="mouse-sensitivity" type="range" min="0.1" max="5" step="0.1" value="1" /></span>
             </label>
             <label class="setting-row" for="invert-y">
-              <span><b>INVERT Y</b><small>Reverse vertical mouse look</small></span>
+              <span><b data-i18n="settings.invertY">INVERTER EIXO Y</b><small data-i18n="settings.invertYHelp">Inverte o movimento vertical do mouse</small></span>
               <input id="invert-y" class="setting-toggle" type="checkbox" />
             </label>
+            <label class="setting-row" for="field-of-view">
+              <span><b data-i18n="settings.fov">CAMPO DE VISÃO</b><small data-i18n="settings.fovHelp">Ajuste entre 70° e 110°; padrão 90°</small></span>
+              <span class="setting-control"><output id="fov-value" for="field-of-view">90°</output><input id="field-of-view" type="range" min="70" max="110" step="1" value="90" /></span>
+            </label>
             <label class="setting-row" for="graphics-quality">
-              <span><b>GRAPHICS QUALITY</b><small>Adjust rendering cost and shadow detail</small></span>
+              <span><b data-i18n="settings.graphics">QUALIDADE GRÁFICA</b><small data-i18n="settings.graphicsHelp">Ajusta o custo de renderização e as sombras</small></span>
               <select id="graphics-quality" class="setting-select">
-                <option value="LOW">LOW</option>
-                <option value="BALANCED" selected>BALANCED</option>
-                <option value="HIGH">HIGH</option>
+                <option value="LOW" data-i18n="settings.low">BAIXA</option>
+                <option value="BALANCED" selected data-i18n="settings.balanced">EQUILIBRADA</option>
+                <option value="HIGH" data-i18n="settings.high">ALTA</option>
               </select>
             </label>
-            <p class="settings-help">Balanced is recommended for most computers. Lower presets reduce render resolution and disable shadows.</p>
-            <button id="settings-back-button" class="button button-primary settings-back"><span>BACK TO PAUSE MENU</span><b>←</b></button>
+            <label class="setting-row" for="dynamic-crosshair"><span><b data-i18n="settings.dynamicCrosshair">MIRA DINÂMICA</b><small data-i18n="settings.dynamicCrosshairHelp">Expande com movimento e recuo da arma</small></span><input id="dynamic-crosshair" class="setting-toggle" type="checkbox" checked /></label>
+            <label class="setting-row" for="movement-debug-toggle"><span><b data-i18n="settings.movementDebug">DADOS DE MOVIMENTO</b><small data-i18n="settings.movementDebugHelp">Exibe velocidade e precisão; oculto por padrão</small></span><input id="movement-debug-toggle" class="setting-toggle" type="checkbox" /></label>
+            <label class="setting-row" for="performance-toggle"><span><b data-i18n="settings.performance">PAINEL DE DESEMPENHO</b><small data-i18n="settings.performanceHelp">Exibe FPS, desenhos, geometria e texturas</small></span><input id="performance-toggle" class="setting-toggle" type="checkbox" /></label>
+            <p class="settings-help" data-i18n="settings.performanceNote">Qualidade equilibrada é recomendada. Predefinições menores reduzem a resolução e desativam sombras.</p>
+            <button id="settings-back-button" class="button button-primary settings-back"><span data-i18n="settings.back">VOLTAR AO MENU DE PAUSA</span><b>←</b></button>
           </div>
         </section>
       </div>

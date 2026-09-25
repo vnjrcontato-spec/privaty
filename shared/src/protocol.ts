@@ -1,5 +1,5 @@
-export const PROTOCOL_VERSION = "SP-1";
-export const SERVER_NAME = "STRIKEPOINT LOCAL";
+export const PROTOCOL_VERSION = "SP-2";
+export const SERVER_NAME = "STRIKEPOINT BRASIL";
 export const MAX_PLAYERS = 10;
 export const SERVER_TICK_RATE = 20;
 export const ROUND_LENGTH_SECONDS = 90;
@@ -15,7 +15,7 @@ export interface PlayerInput {
   backward: boolean;
   left: boolean;
   right: boolean;
-  sprint: boolean;
+  walk: boolean;
   crouch: boolean;
   jump: boolean;
   yaw: number;
@@ -40,6 +40,10 @@ export interface PublicPlayer {
   x: number;
   y: number;
   z: number;
+  velocityX: number;
+  velocityZ: number;
+  velocityY: number;
+  grounded: boolean;
   yaw: number;
   health: number;
   alive: boolean;
@@ -81,7 +85,7 @@ export type ClientMessage =
 export type ServerEvent =
   | { type: "player-joined"; playerId: string; name: string; team: Team }
   | { type: "player-left"; playerId: string; name: string }
-  | { type: "shot"; playerId: string; weapon: WeaponId; start: PlayerPosition; end: PlayerPosition; hitPlayerId: string | null; headshot: boolean }
+  | { type: "shot"; playerId: string; weapon: WeaponId; start: PlayerPosition; end: PlayerPosition; hitPlayerId: string | null; headshot: boolean; spread: number; movementPenalty: number }
   | { type: "hit"; attackerId: string; targetId: string; damage: number; headshot: boolean }
   | { type: "kill"; killerId: string; victimId: string; weapon: WeaponId }
   | { type: "round-end"; winner: Team | null; reason: string }
@@ -102,7 +106,7 @@ export const EMPTY_INPUT: PlayerInput = {
   backward: false,
   left: false,
   right: false,
-  sprint: false,
+  walk: false,
   crouch: false,
   jump: false,
   yaw: 0,

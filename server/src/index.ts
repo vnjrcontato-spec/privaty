@@ -23,6 +23,7 @@ import {
   type WeaponId,
 } from "../../shared/src/protocol.js";
 import { COLLIDERS, movePlayer, spawnPosition } from "../../shared/src/movement.js";
+import { calculateWeaponAccuracy } from "../../shared/src/accuracy.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const TICK_MS = 1000 / SERVER_TICK_RATE;
@@ -42,8 +43,11 @@ interface Player {
   x: number;
   y: number;
   z: number;
+  velocityX: number;
+  velocityZ: number;
   velocityY: number;
   grounded: boolean;
+  jumpBufferSeconds: number;
   yaw: number;
   pitch: number;
   input: PlayerInput;
@@ -55,6 +59,8 @@ interface Player {
   ammo: Record<WeaponId, WeaponAmmo>;
   reloadAt: number;
   lastShot: number;
+  burstShots: number;
+  rngState: number;
   lastAction: number;
 }
 
@@ -65,13 +71,13 @@ let round = 0;
 let secondsLeft = ROUND_LENGTH_SECONDS;
 let roundEndAt = 0;
 let matchScore: Record<Team, number> = { ALPHA: 0, BRAVO: 0 };
-let message = "Waiting for players";
+let message = "Aguardando jogadores";
 let stateTimer: NodeJS.Timeout | undefined;
 
 function safeName(value: unknown): string {
-  if (typeof value !== "string") return "PLAYER";
-  const cleaned = value.replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 18);
-  return cleaned || "PLAYER";
+  if (typeof value !== "string") return "JOGADOR";
+  const cleaned = value.replace(/[^\p{L}\p{N} _-]/gu, "").trim().slice(0, 18);
+  return cleaned || "JOGADOR";
 }
 
 function send(socket: WebSocket, payload: unknown): void {
@@ -92,6 +98,10 @@ function teamCounts(): Record<Team, number> {
   return counts;
 }
 
+function teamLabel(team: Team): string {
+  return team === "ALPHA" ? "ALFA" : "BRAVO";
+}
+
 function publicPlayer(player: Player): PublicPlayer {
   const ammo = player.ammo[player.weapon];
   return {
@@ -101,6 +111,10 @@ function publicPlayer(player: Player): PublicPlayer {
     x: player.x,
     y: player.y,
     z: player.z,
+    velocityX: player.velocityX,
+    velocityZ: player.velocityZ,
+    velocityY: player.velocityY,
+    grounded: player.grounded,
     yaw: player.yaw,
     health: player.health,
     alive: player.alive,
@@ -145,8 +159,11 @@ function resetPlayerForRound(player: Player, index: number): void {
   player.x = position.x;
   player.y = position.y;
   player.z = position.z;
+  player.velocityX = 0;
+  player.velocityZ = 0;
   player.velocityY = 0;
   player.grounded = true;
+  player.jumpBufferSeconds = 0;
   player.health = 100;
   player.alive = true;
   player.yaw = player.team === "ALPHA" ? Math.PI : 0;
@@ -158,6 +175,8 @@ function resetPlayerForRound(player: Player, index: number): void {
     V9: { magazine: 12, reserve: 36 },
   };
   player.reloadAt = 0;
+  player.lastShot = 0;
+  player.burstShots = 0;
 }
 
 function startRound(): void {
@@ -165,14 +184,14 @@ function startRound(): void {
   if (players.size < 2 || counts.ALPHA === 0 || counts.BRAVO === 0) {
     phase = "WAITING";
     secondsLeft = ROUND_LENGTH_SECONDS;
-    message = "Waiting for both teams";
+    message = "Aguardando as duas equipes";
     broadcastState();
     return;
   }
   round += 1;
   phase = "ROUND_ACTIVE";
   secondsLeft = ROUND_LENGTH_SECONDS;
-  message = "Round " + String(round).padStart(2, "0") + " — engage";
+  message = "Rodada " + String(round).padStart(2, "0") + " — começou";
   const spawnIndexes: Record<Team, number> = { ALPHA: 0, BRAVO: 0 };
   for (const player of players.values()) {
     resetPlayerForRound(player, spawnIndexes[player.team]);
@@ -185,18 +204,18 @@ function startRound(): void {
 function startMatch(requesterId: string): void {
   if (requesterId !== hostId) {
     const requester = players.get(requesterId);
-    if (requester) send(requester.socket, { type: "error", message: "Only the host can start the match." });
+    if (requester) send(requester.socket, { type: "error", message: "Somente o anfitrião pode iniciar a partida." });
     return;
   }
   if (players.size < 2) {
     const host = players.get(requesterId);
-    if (host) send(host.socket, { type: "error", message: "A second player must join before starting." });
+    if (host) send(host.socket, { type: "error", message: "Mais uma pessoa precisa entrar antes de iniciar." });
     return;
   }
   const counts = teamCounts();
   if (counts.ALPHA === 0 || counts.BRAVO === 0) {
     const host = players.get(requesterId);
-    if (host) send(host.socket, { type: "error", message: "Both teams need at least one player." });
+    if (host) send(host.socket, { type: "error", message: "As duas equipes precisam ter pelo menos uma pessoa." });
     return;
   }
   if (phase === "MATCH_END") matchScore = { ALPHA: 0, BRAVO: 0 };
@@ -209,12 +228,12 @@ function endRound(winner: Team | null, reason: string): void {
   phase = "ROUND_END";
   secondsLeft = 4;
   roundEndAt = Date.now() + 4000;
-  message = winner ? winner + " takes the round" : "Round drawn";
+  message = winner ? teamLabel(winner) + " venceu a rodada" : "Rodada empatada";
   if (winner) matchScore[winner] += 1;
   broadcastEvent({ type: "round-end", winner, reason });
   if (winner && matchScore[winner] >= ROUNDS_TO_WIN) {
     phase = "MATCH_END";
-    message = winner + " wins the match";
+    message = teamLabel(winner) + " venceu a partida";
     broadcastEvent({ type: "match-end", winner });
   }
   broadcastState();
@@ -223,18 +242,18 @@ function endRound(winner: Team | null, reason: string): void {
 function checkElimination(): void {
   const counts = teamCounts();
   if (!counts.ALPHA && counts.BRAVO) {
-    endRound("BRAVO", "Team Alpha left the server");
+    endRound("BRAVO", "A equipe ALFA saiu do servidor");
     return;
   }
   if (!counts.BRAVO && counts.ALPHA) {
-    endRound("ALPHA", "Team Bravo left the server");
+    endRound("ALPHA", "A equipe BRAVO saiu do servidor");
     return;
   }
   if (!counts.ALPHA || !counts.BRAVO) return;
   const alive: Record<Team, number> = { ALPHA: 0, BRAVO: 0 };
   for (const player of players.values()) if (player.alive) alive[player.team] += 1;
-  if (alive.ALPHA === 0) endRound("BRAVO", "Team Alpha eliminated");
-  else if (alive.BRAVO === 0) endRound("ALPHA", "Team Bravo eliminated");
+  if (alive.ALPHA === 0) endRound("BRAVO", "A equipe ALFA foi eliminada");
+  else if (alive.BRAVO === 0) endRound("ALPHA", "A equipe BRAVO foi eliminada");
 }
 
 function removePlayer(player: Player): void {
@@ -249,21 +268,30 @@ function removePlayer(player: Player): void {
     secondsLeft = ROUND_LENGTH_SECONDS;
     roundEndAt = 0;
     matchScore = { ALPHA: 0, BRAVO: 0 };
-    message = "Waiting for players";
+    message = "Aguardando jogadores";
   } else {
-    message = player.name + " disconnected";
+    message = player.name + " saiu do servidor";
     checkElimination();
   }
   broadcastState();
 }
 
-function directionFor(player: Player): { x: number; y: number; z: number } {
-  const cosPitch = Math.cos(player.pitch);
+function directionFor(yaw: number, pitch: number): { x: number; y: number; z: number } {
+  const cosPitch = Math.cos(pitch);
   return {
-    x: Math.sin(player.yaw) * cosPitch,
-    y: Math.sin(player.pitch),
-    z: -Math.cos(player.yaw) * cosPitch,
+    x: Math.sin(yaw) * cosPitch,
+    y: Math.sin(pitch),
+    z: -Math.cos(yaw) * cosPitch,
   };
+}
+
+function nextRandom(player: Player): number {
+  let value = player.rngState >>> 0;
+  value ^= value << 13;
+  value ^= value >>> 17;
+  value ^= value << 5;
+  player.rngState = value >>> 0 || 0x6d2b79f5;
+  return player.rngState / 0x1_0000_0000;
 }
 
 function firstWallDistance(startX: number, startZ: number, directionX: number, directionZ: number): number {
@@ -303,12 +331,26 @@ function traceShot(shooter: Player, now: number): void {
   if (now - shooter.lastShot < SHOT_COOLDOWN[shooter.weapon] || now < shooter.reloadAt) return;
   const ammo = shooter.ammo[shooter.weapon];
   if (ammo.magazine <= 0) {
-    send(shooter.socket, { type: "error", message: "Magazine empty — press R to reload." });
+    send(shooter.socket, { type: "error", message: "Carregador vazio — pressione R para recarregar." });
     return;
   }
+  if (now - shooter.lastShot > 520) shooter.burstShots = 0;
+  shooter.burstShots = Math.min(10, shooter.burstShots + 1);
   shooter.lastShot = now;
   ammo.magazine -= 1;
-  const direction = directionFor(shooter);
+  const accuracy = calculateWeaponAccuracy({
+    horizontalSpeed: Math.hypot(shooter.velocityX, shooter.velocityZ),
+    grounded: shooter.grounded,
+    crouching: shooter.input.crouch,
+    weapon: shooter.weapon,
+    burstShots: shooter.burstShots,
+  });
+  const radius = Math.sqrt(nextRandom(shooter)) * accuracy.finalSpread;
+  const angle = nextRandom(shooter) * Math.PI * 2;
+  const direction = directionFor(
+    shooter.yaw + Math.cos(angle) * radius,
+    Math.max(-1.45, Math.min(1.45, shooter.pitch + Math.sin(angle) * radius)),
+  );
   const start = { x: shooter.x, y: shooter.y + (shooter.input.crouch ? 1.2 : 1.58), z: shooter.z };
   const horizontal = Math.hypot(direction.x, direction.z) || 1;
   let wallDistance = firstWallDistance(start.x, start.z, direction.x / horizontal, direction.z / horizontal);
@@ -345,6 +387,8 @@ function traceShot(shooter: Player, now: number): void {
     end,
     hitPlayerId: target?.id ?? null,
     headshot,
+    spread: accuracy.finalSpread,
+    movementPenalty: accuracy.movementPenalty,
   });
 
   if (!target) return;
@@ -371,7 +415,7 @@ function processMessage(player: Player, messageValue: ClientMessage): void {
         backward: !!input.backward,
         left: !!input.left,
         right: !!input.right,
-        sprint: !!input.sprint,
+        walk: !!input.walk,
         crouch: !!input.crouch,
         jump: !!input.jump,
         yaw: Number.isFinite(input.yaw) ? input.yaw : player.yaw,
@@ -395,6 +439,7 @@ function processMessage(player: Player, messageValue: ClientMessage): void {
     case "weapon":
       if ((messageValue.weapon === "AR12" || messageValue.weapon === "V9") && phase === "ROUND_ACTIVE" && player.alive && Date.now() - player.lastAction > 180) {
         player.weapon = messageValue.weapon;
+        player.burstShots = 0;
         player.lastAction = Date.now();
         broadcastEvent({ type: "weapon-switch", playerId: player.id, weapon: player.weapon });
       }
@@ -402,7 +447,7 @@ function processMessage(player: Player, messageValue: ClientMessage): void {
     case "team":
       if (phase !== "WAITING" || (messageValue.team !== "ALPHA" && messageValue.team !== "BRAVO")) return;
       if (messageValue.team !== player.team && teamCounts()[messageValue.team] >= teamCounts()[player.team] + 1) {
-        send(player.socket, { type: "error", message: "Teams may differ by at most one player." });
+        send(player.socket, { type: "error", message: "A diferença entre as equipes pode ser de, no máximo, uma pessoa." });
         return;
       }
       player.team = messageValue.team;
@@ -413,7 +458,7 @@ function processMessage(player: Player, messageValue: ClientMessage): void {
       return;
     case "leave":
       removePlayer(player);
-      player.socket.close(1000, "returned to lobby");
+      player.socket.close(1000, "voltou à sala");
       return;
     case "ping":
       send(player.socket, { type: "pong", sentAt: messageValue.sentAt, serverTime: Date.now() });
@@ -437,22 +482,29 @@ function tick(): void {
     if (phase === "ROUND_ACTIVE" && player.alive) {
       const moved = movePlayer(
         { x: player.x, y: player.y, z: player.z },
+        player.velocityX,
+        player.velocityZ,
         player.velocityY,
         player.grounded,
+        player.jumpBufferSeconds,
         player.input,
         TICK_MS / 1000,
+        player.weapon,
       );
       player.x = moved.position.x;
       player.y = moved.position.y;
       player.z = moved.position.z;
+      player.velocityX = moved.velocityX;
+      player.velocityZ = moved.velocityZ;
       player.velocityY = moved.velocityY;
       player.grounded = moved.grounded;
+      player.jumpBufferSeconds = moved.jumpBufferSeconds;
     }
   }
 
   if (phase === "ROUND_ACTIVE") {
     secondsLeft -= TICK_MS / 1000;
-    if (secondsLeft <= 0) endRound("BRAVO", "Time expired");
+    if (secondsLeft <= 0) endRound("BRAVO", "O tempo acabou");
   } else if (phase === "ROUND_END" && now >= roundEndAt) {
     startRound();
   }
@@ -506,21 +558,21 @@ websocketServer.on("connection", (socket) => {
     try {
       payload = JSON.parse(raw.toString()) as ClientMessage;
     } catch {
-      send(socket, { type: "error", message: "Invalid network message." });
+      send(socket, { type: "error", message: "Mensagem de rede inválida." });
       return;
     }
     if (!player) {
       if (payload.type !== "join") {
-        send(socket, { type: "error", message: "Send a join request to enter the server." });
+        send(socket, { type: "error", message: "Envie uma solicitação para entrar no servidor." });
         return;
       }
       if (payload.protocolVersion !== PROTOCOL_VERSION) {
-        send(socket, { type: "error", message: "Protocol version mismatch. Reload the game page." });
+        send(socket, { type: "error", message: "A versão do jogo mudou. Atualize a página para entrar." });
         socket.close(1008, "version mismatch");
         return;
       }
       if (players.size >= MAX_PLAYERS) {
-        send(socket, { type: "error", message: "Server is full." });
+        send(socket, { type: "error", message: "O servidor está cheio." });
         socket.close(1008, "server full");
         return;
       }
@@ -538,8 +590,11 @@ websocketServer.on("connection", (socket) => {
         x: spawn.x,
         y: spawn.y,
         z: spawn.z,
+        velocityX: 0,
+        velocityZ: 0,
         velocityY: 0,
         grounded: true,
+        jumpBufferSeconds: 0,
         yaw: team === "ALPHA" ? Math.PI : 0,
         pitch: 0,
         input: { ...EMPTY_INPUT },
@@ -551,6 +606,8 @@ websocketServer.on("connection", (socket) => {
         ammo: { AR12: { magazine: 30, reserve: 90 }, V9: { magazine: 12, reserve: 36 } },
         reloadAt: 0,
         lastShot: 0,
+        burstShots: 0,
+        rngState: Math.floor(Math.random() * 0xffff_ffff) || 0x6d2b79f5,
         lastAction: 0,
       };
       if (phase === "ROUND_ACTIVE") resetPlayerForRound(player, spawnIndex);
@@ -558,7 +615,7 @@ websocketServer.on("connection", (socket) => {
       players.set(id, player);
       send(socket, { type: "welcome", playerId: id, hostId, roomId: "LOCAL-01", protocolVersion: PROTOCOL_VERSION });
       broadcastEvent({ type: "player-joined", playerId: id, name: player.name, team });
-      message = player.name + " joined " + team;
+      message = player.name + " entrou na equipe " + teamLabel(team);
       broadcastState();
       console.log("[JOIN] " + player.name + " connected id=" + id.slice(0, 8) + " team=" + team);
       return;
