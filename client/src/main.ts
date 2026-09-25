@@ -14,6 +14,9 @@ const hud = $("#hud");
 const lobby = $("#lobby-panel");
 const toast = $("#toast");
 const scoreboard = $("#scoreboard");
+const pauseOverlay = $("#pause-overlay");
+const pauseHome = $("#pause-home");
+const settingsPanel = $("#settings-panel");
 const connectionLabel = $("#connection-label");
 const serverStatus = $("#server-status");
 const pingValue = $("#ping-value");
@@ -34,9 +37,40 @@ serverAddressInput.value = window.location.port === "5173"
   : window.location.host;
 playerNameInput.value = localStorage.getItem("strikepoint_callsign") || "RAVEN";
 const game = new GameClient(canvas);
+const sensitivityInput = $("#mouse-sensitivity") as HTMLInputElement;
+const sensitivityValue = $("#sensitivity-value") as HTMLOutputElement;
+const invertYInput = $("#invert-y") as HTMLInputElement;
+const graphicsQualityInput = $("#graphics-quality") as HTMLSelectElement;
+
+const savedSensitivity = Number(localStorage.getItem("strikepoint_sensitivity_scale") || "1");
+sensitivityInput.value = String(Math.min(5, Math.max(0.1, Number.isFinite(savedSensitivity) ? savedSensitivity : 1)));
+invertYInput.checked = localStorage.getItem("strikepoint_invert_y") === "true";
+const savedQuality = localStorage.getItem("strikepoint_graphics_quality");
+graphicsQualityInput.value = savedQuality === "LOW" || savedQuality === "HIGH" ? savedQuality : "BALANCED";
+
+function applyMouseSettings(): void {
+  const sensitivity = Number(sensitivityInput.value);
+  sensitivityValue.value = sensitivity.toFixed(1);
+  localStorage.setItem("strikepoint_sensitivity_scale", String(sensitivity));
+  localStorage.setItem("strikepoint_invert_y", String(invertYInput.checked));
+  game.setMouseSettings(sensitivity, invertYInput.checked);
+}
+
+applyMouseSettings();
+game.setGraphicsQuality(graphicsQualityInput.value as "LOW" | "BALANCED" | "HIGH");
+
 game.setCallbacks({
   scoreboard: (visible) => scoreboard.classList.toggle("is-hidden", !visible),
   toast: (text) => showToast(text),
+  pause: (paused) => {
+    pauseOverlay.classList.toggle("is-hidden", !paused);
+    pauseOverlay.setAttribute("aria-hidden", String(!paused));
+    if (paused) {
+      pauseHome.classList.remove("is-hidden");
+      settingsPanel.classList.add("is-hidden");
+      window.setTimeout(() => $("#resume-button").focus(), 0);
+    }
+  },
 });
 
 function showToast(text: string): void {
@@ -282,6 +316,7 @@ function updateView(): void {
     menu.classList.remove("is-hidden");
     lobby.classList.add("is-hidden");
     hud.classList.add("is-hidden");
+    pauseOverlay.classList.add("is-hidden");
     connectCard?.classList.remove("is-hidden");
     return;
   }
@@ -342,6 +377,34 @@ $("#alpha-team").addEventListener("click", () => send({ type: "team", team: "ALP
 $("#bravo-team").addEventListener("click", () => send({ type: "team", team: "BRAVO" as Team }));
 canvas.addEventListener("click", () => game.captureMouse());
 window.addEventListener("beforeunload", () => socket?.close(1000, "page closing"));
+
+$("#resume-button").addEventListener("click", () => game.resume());
+$("#settings-button").addEventListener("click", () => {
+  pauseHome.classList.add("is-hidden");
+  settingsPanel.classList.remove("is-hidden");
+  $("#settings-back-button").focus();
+});
+$("#settings-back-button").addEventListener("click", () => {
+  settingsPanel.classList.add("is-hidden");
+  pauseHome.classList.remove("is-hidden");
+  $("#settings-button").focus();
+});
+$("#return-lobby-button").addEventListener("click", () => {
+  if (!window.confirm("Return to the main lobby? Your player will leave this match and can rejoin later.")) return;
+  game.setPaused(false);
+  send({ type: "leave" });
+});
+$("#disconnect-button").addEventListener("click", () => {
+  game.setPaused(false);
+  if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "Disconnected by player");
+});
+sensitivityInput.addEventListener("input", applyMouseSettings);
+invertYInput.addEventListener("change", applyMouseSettings);
+graphicsQualityInput.addEventListener("change", () => {
+  const quality = graphicsQualityInput.value as "LOW" | "BALANCED" | "HIGH";
+  localStorage.setItem("strikepoint_graphics_quality", quality);
+  game.setGraphicsQuality(quality);
+});
 
 serverAddressInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") connect(false);
