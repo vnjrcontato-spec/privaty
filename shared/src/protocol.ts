@@ -75,6 +75,7 @@ export type ClientMessage =
   | { type: "weapon"; weapon: WeaponId }
   | { type: "team"; team: Team }
   | { type: "start" }
+  | { type: "leave" }
   | { type: "ping"; sentAt: number };
 
 export type ServerEvent =
