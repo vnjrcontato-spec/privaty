@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { COLLIDERS, movePlayer } from "../../../shared/src/movement";
 import { calculateWeaponAccuracy } from "../../../shared/src/accuracy";
-import { EMPTY_INPUT, type GameState, type PlayerInput, type PlayerPosition, type PublicPlayer, type ServerEvent, type WeaponId } from "../../../shared/src/protocol";
+import { EMPTY_INPUT, type DroppedWeapon, type GameState, type PlayerInput, type PlayerPosition, type PublicPlayer, type ServerEvent, type WeaponId } from "../../../shared/src/protocol";
 
 interface Avatar {
   root: THREE.Group;
@@ -27,14 +27,17 @@ export class GameClient {
   readonly canvas: HTMLCanvasElement;
   private readonly clock = new THREE.Clock();
   private readonly avatars = new Map<string, Avatar>();
+  private readonly droppedWeaponMarkers = new Map<string, THREE.Group>();
   private readonly tracers: Tracer[] = [];
   private readonly pressed = new Set<string>();
   private readonly raycaster = new THREE.Raycaster();
   private readonly gunRoot = new THREE.Group();
+  private deviceMarker: THREE.Group | null = null;
   private readonly pointLights: THREE.PointLight[] = [];
   private readonly flashMesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
   private keyLight: THREE.DirectionalLight | null = null;
   private localId = "";
+  private spectatingId: string | null = null;
   private sendFn: SendFunction = () => undefined;
   private currentState: GameState | null = null;
   private predicted = new THREE.Vector3();
@@ -49,6 +52,7 @@ export class GameClient {
   private weaponId: WeaponId = "AR12";
   private scoreBoardVisible = false;
   private pauseMenuOpen = false;
+  private buyMenuOpen = false;
   private pauseOpenedAt = 0;
   private localVelocityX = 0;
   private localVelocityZ = 0;
@@ -67,6 +71,7 @@ export class GameClient {
   private mouseSwayX = 0;
   private mouseSwayY = 0;
   private scoreboardCallback: (visible: boolean) => void = () => undefined;
+  private buyMenuCallback: (visible: boolean) => void = () => undefined;
   private toastCallback: (message: string) => void = () => undefined;
   private pauseCallback: (paused: boolean) => void = () => undefined;
   private telemetryCallback: (movement: string | null, performance: string | null) => void = () => undefined;
@@ -109,8 +114,9 @@ export class GameClient {
     this.sendFn = sender;
   }
 
-  setCallbacks(callbacks: { scoreboard?: (visible: boolean) => void; toast?: (message: string) => void; pause?: (paused: boolean) => void; telemetry?: (movement: string | null, performance: string | null) => void }): void {
+  setCallbacks(callbacks: { scoreboard?: (visible: boolean) => void; buyMenu?: (visible: boolean) => void; toast?: (message: string) => void; pause?: (paused: boolean) => void; telemetry?: (movement: string | null, performance: string | null) => void }): void {
     this.scoreboardCallback = callbacks.scoreboard || (() => undefined);
+    this.buyMenuCallback = callbacks.buyMenu || (() => undefined);
     this.toastCallback = callbacks.toast || (() => undefined);
     this.pauseCallback = callbacks.pause || (() => undefined);
     this.telemetryCallback = callbacks.telemetry || (() => undefined);
@@ -163,10 +169,27 @@ export class GameClient {
     this.firing = false;
     this.pressed.clear();
     this.jumpPulse = false;
+    if (paused) this.sendFn({ type: "input", input: { ...EMPTY_INPUT, yaw: this.yaw, pitch: this.pitch } });
     this.scoreBoardVisible = false;
     this.scoreboardCallback(false);
     if (paused && document.pointerLockElement === this.canvas) document.exitPointerLock();
     this.pauseCallback(paused);
+  }
+
+  private setBuyMenu(open: boolean): void {
+    if (open && this.currentState?.phase !== "FREEZE_TIME") return;
+    if (this.buyMenuOpen === open) return;
+    this.buyMenuOpen = open;
+    if (open) {
+      this.firing = false;
+      this.pressed.clear();
+      this.jumpPulse = false;
+    }
+    this.buyMenuCallback(open);
+  }
+
+  closeBuyMenu(): void {
+    this.setBuyMenu(false);
   }
 
   setIdentity(playerId: string, name: string): void {
@@ -176,9 +199,16 @@ export class GameClient {
 
   setState(state: GameState): void {
     this.currentState = state;
-    if (state.phase !== "ROUND_ACTIVE" && this.pauseMenuOpen) this.setPaused(false);
-    if (state.phase !== "ROUND_ACTIVE" && document.pointerLockElement === this.canvas) document.exitPointerLock();
+    const playable = ["WARMUP", "FREEZE_TIME", "ROUND_ACTIVE", "DEVICE_PLANTED"].includes(state.phase);
+    if (!playable && this.pauseMenuOpen) this.setPaused(false);
+    if (!playable && document.pointerLockElement === this.canvas) document.exitPointerLock();
+    if (state.phase !== "FREEZE_TIME" && this.buyMenuOpen) this.setBuyMenu(false);
+    if (state.phase !== "ROUND_ACTIVE" && state.phase !== "DEVICE_PLANTED") this.firing = false;
+    this.updateDeviceMarker(state);
+    this.updateDroppedWeapons(state.droppedWeapons);
     const local = state.players.find((player) => player.id === this.localId);
+    if (!local?.alive && document.pointerLockElement === this.canvas) document.exitPointerLock();
+    if (local?.alive) this.spectatingId = null;
     if (local) {
       if (!this.predictedReady) {
         this.predicted.set(local.x, local.y, local.z);
@@ -202,8 +232,10 @@ export class GameClient {
       if (!this.pressed.has("MouseLocked")) {
         this.yaw = local.yaw;
       }
-      this.weaponId = local.weapon;
-      this.updateWeaponName(local.weapon);
+      if (local.weapon && this.weaponId !== local.weapon) {
+        this.weaponId = local.weapon;
+        this.buildWeapon(local.weapon);
+      } else if (local.weapon) this.updateWeaponName(local.weapon);
     }
     const livingIds = new Set(state.players.filter((player) => player.id !== this.localId).map((player) => player.id));
     for (const [id, avatar] of this.avatars) {
@@ -222,9 +254,64 @@ export class GameClient {
       }
       avatar.name = player.name;
       avatar.target.set(player.x, player.y, player.z);
-      avatar.root.visible = player.alive;
+      avatar.root.visible = player.alive && player.visibleToViewer;
       avatar.root.rotation.y = -player.yaw;
       avatar.body.scale.y = player.crouching ? 0.72 : 1;
+    }
+  }
+
+  private updateDeviceMarker(state: GameState): void {
+    if (!this.deviceMarker) {
+      const marker = new THREE.Group();
+      const red = new THREE.MeshStandardMaterial({ color: 0xe65d42, emissive: 0x8f1d12, emissiveIntensity: 1.2, metalness: 0.35, roughness: 0.4 });
+      const dark = new THREE.MeshStandardMaterial({ color: 0x202728, metalness: 0.6, roughness: 0.5 });
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.2, 0.23), dark);
+      const beacon = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.09), red);
+      beacon.position.y = 0.13;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.035, 6, 28), new THREE.MeshBasicMaterial({ color: 0xec7251, transparent: true, opacity: 0.72 }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.035;
+      marker.add(core, beacon, ring);
+      marker.visible = false;
+      this.scene.add(marker);
+      this.deviceMarker = marker;
+    }
+    const device = state.device;
+    const visible = (device.status === "dropped" || device.status === "planted") && device.x !== null && device.z !== null;
+    this.deviceMarker.visible = visible;
+    if (visible) this.deviceMarker.position.set(device.x!, 0.06, device.z!);
+  }
+
+  private updateDroppedWeapons(weapons: DroppedWeapon[]): void {
+    const liveIds = new Set(weapons.map((weapon) => weapon.id));
+    for (const [id, marker] of this.droppedWeaponMarkers) {
+      if (liveIds.has(id)) continue;
+      this.scene.remove(marker);
+      marker.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => material.dispose());
+        }
+      });
+      this.droppedWeaponMarkers.delete(id);
+    }
+    for (const weapon of weapons) {
+      let marker = this.droppedWeaponMarkers.get(weapon.id);
+      if (!marker) {
+        marker = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.1, 0.12), new THREE.MeshStandardMaterial({ color: 0x343c38, metalness: 0.68, roughness: 0.42 }));
+        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.12, 0.18), new THREE.MeshStandardMaterial({ color: 0x806344, roughness: 0.76 }));
+        const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.065, 0.065), new THREE.MeshStandardMaterial({ color: 0x222827, metalness: 0.78, roughness: 0.32 }));
+        body.position.x = -0.03;
+        stock.position.x = -0.38;
+        barrel.position.x = 0.39;
+        marker.add(body, stock, barrel);
+        marker.rotation.x = -Math.PI / 2;
+        this.scene.add(marker);
+        this.droppedWeaponMarkers.set(weapon.id, marker);
+      }
+      marker.position.set(weapon.x, weapon.y + 0.16, weapon.z);
     }
   }
 
@@ -274,15 +361,17 @@ export class GameClient {
 
   captureMouse(): void {
     const local = this.currentState?.players.find((player) => player.id === this.localId);
-    if (!this.pauseMenuOpen && local?.alive && this.currentState?.phase === "ROUND_ACTIVE" && document.pointerLockElement !== this.canvas) {
+    if (!this.pauseMenuOpen && !this.buyMenuOpen && local?.alive && this.currentState && ["WARMUP", "FREEZE_TIME", "ROUND_ACTIVE", "DEVICE_PLANTED"].includes(this.currentState.phase) && document.pointerLockElement !== this.canvas) {
       void this.canvas.requestPointerLock();
     }
   }
 
   clearConnection(): void {
     this.setPaused(false);
+    this.setBuyMenu(false);
     this.currentState = null;
     this.localId = "";
+    this.spectatingId = null;
     this.predictedReady = false;
     this.localVelocityX = 0;
     this.localVelocityZ = 0;
@@ -291,6 +380,8 @@ export class GameClient {
     this.firing = false;
     for (const avatar of this.avatars.values()) this.scene.remove(avatar.root);
     this.avatars.clear();
+    this.updateDroppedWeapons([]);
+    if (this.deviceMarker) this.deviceMarker.visible = false;
   }
 
   private readonly onResize = (): void => {
@@ -302,14 +393,27 @@ export class GameClient {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.code === "Escape") {
       event.preventDefault();
-      if (!event.repeat && this.currentState?.phase === "ROUND_ACTIVE") {
+      if (this.buyMenuOpen) {
+        this.setBuyMenu(false);
+        return;
+      }
+      if (!event.repeat && ["ROUND_ACTIVE", "DEVICE_PLANTED"].includes(this.currentState?.phase || "")) {
         if (this.pauseMenuOpen && performance.now() - this.pauseOpenedAt > 250) this.resume();
         else this.setPaused(true);
       }
       return;
     }
     if (this.pauseMenuOpen) return;
-    if (event.code === "Tab" && this.currentState?.phase === "ROUND_ACTIVE") {
+    if (event.code === "KeyB" && !event.repeat && this.currentState?.phase === "FREEZE_TIME") {
+      event.preventDefault();
+      this.setBuyMenu(!this.buyMenuOpen);
+      return;
+    }
+    if (event.code === "KeyG" && !event.repeat && this.currentState?.players.find((player) => player.id === this.localId)?.hasDevice) {
+      this.sendFn({ type: "drop-device" });
+      return;
+    }
+    if (event.code === "Tab" && this.currentState && !["WAITING", "MATCH_END"].includes(this.currentState.phase)) {
       event.preventDefault();
       this.scoreBoardVisible = true;
       this.scoreboardCallback(true);
@@ -350,7 +454,7 @@ export class GameClient {
       this.pressed.delete("MouseLocked");
       this.firing = false;
       const local = this.currentState?.players.find((player) => player.id === this.localId);
-      if (!this.pauseMenuOpen && !document.hidden && local?.alive && this.currentState?.phase === "ROUND_ACTIVE") this.setPaused(true);
+      if (!this.pauseMenuOpen && !document.hidden && local?.alive && ["ROUND_ACTIVE", "DEVICE_PLANTED"].includes(this.currentState?.phase || "")) this.setPaused(true);
     }
   };
 
@@ -365,7 +469,7 @@ export class GameClient {
       this.captureMouse();
       return;
     }
-    if (this.currentState?.phase !== "ROUND_ACTIVE") return;
+    if (this.buyMenuOpen || !["ROUND_ACTIVE", "DEVICE_PLANTED"].includes(this.currentState?.phase || "")) return;
     this.firing = true;
     this.ensureAudio();
     this.fireIfReady();
@@ -383,7 +487,7 @@ export class GameClient {
   private readInput(): PlayerInput {
     const locked = document.pointerLockElement === this.canvas;
     const local = this.currentState?.players.find((player) => player.id === this.localId);
-    if (this.pauseMenuOpen || !locked || !this.currentState || this.currentState.phase !== "ROUND_ACTIVE" || !local?.alive) {
+    if (this.pauseMenuOpen || this.buyMenuOpen || !locked || !this.currentState || !["WARMUP", "ROUND_ACTIVE", "DEVICE_PLANTED"].includes(this.currentState.phase) || !local?.alive) {
       return { ...EMPTY_INPUT, yaw: this.yaw, pitch: this.pitch };
     }
     return {
@@ -394,6 +498,7 @@ export class GameClient {
       walk: this.pressed.has("ShiftLeft") || this.pressed.has("ShiftRight"),
       crouch: this.pressed.has("ControlLeft") || this.pressed.has("ControlRight"),
       jump: this.jumpPulse,
+      use: this.pressed.has("KeyE"),
       yaw: this.yaw,
       pitch: this.pitch,
     };
@@ -415,11 +520,12 @@ export class GameClient {
   private readonly animate = (): void => {
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const now = performance.now();
-    if (this.currentState?.phase === "ROUND_ACTIVE" && this.localId) {
+    if (this.currentState && ["WARMUP", "FREEZE_TIME", "ROUND_ACTIVE", "DEVICE_PLANTED"].includes(this.currentState.phase) && this.localId) {
       const local = this.currentState.players.find((player) => player.id === this.localId);
       this.movementInput = this.readInput();
       const isMoving = !this.pauseMenuOpen && (this.movementInput.forward || this.movementInput.backward || this.movementInput.left || this.movementInput.right);
-      if (!this.pauseMenuOpen && this.predictedReady && local?.alive) {
+      const canMove = ["WARMUP", "ROUND_ACTIVE", "DEVICE_PLANTED"].includes(this.currentState.phase);
+      if (canMove && !this.pauseMenuOpen && !this.buyMenuOpen && this.predictedReady && local?.alive) {
         const movement = movePlayer(
           { x: this.predicted.x, y: this.predicted.y, z: this.predicted.z },
           this.localVelocityX,
@@ -440,15 +546,30 @@ export class GameClient {
         this.jumpBufferSeconds = movement.jumpBufferSeconds;
       }
       const bob = isMoving && this.localGrounded ? Math.sin(now * 0.012) * 0.018 : 0;
-      const targetCameraY = this.predicted.y + (this.movementInput.crouch ? 1.12 : 1.58) + bob;
-      this.camera.position.set(this.predicted.x, THREE.MathUtils.damp(this.camera.position.y, targetCameraY, 16, delta), this.predicted.z);
-      this.camera.rotation.set(this.pitch, -this.yaw, 0);
-      if (!this.pauseMenuOpen && local?.alive && now - this.lastInputAt >= 32) {
+      this.gunRoot.visible = !!local?.alive;
+      if (local?.alive) {
+        const targetCameraY = this.predicted.y + (this.movementInput.crouch ? 1.12 : 1.58) + bob;
+        this.camera.position.set(this.predicted.x, THREE.MathUtils.damp(this.camera.position.y, targetCameraY, 16, delta), this.predicted.z);
+        this.camera.rotation.set(this.pitch, -this.yaw, 0);
+      } else if (local) {
+        let target = this.currentState.players.find((player) => player.id === this.spectatingId && player.alive && player.team === local.team && player.visibleToViewer);
+        if (!target) {
+          target = this.currentState.players.find((player) => player.id !== local.id && player.alive && player.team === local.team && player.visibleToViewer);
+          this.spectatingId = target?.id || null;
+        }
+        if (target) {
+          this.camera.position.set(target.x, THREE.MathUtils.damp(this.camera.position.y, target.y + 1.58, 14, delta), target.z);
+          this.camera.rotation.set(target.pitch, -target.yaw, 0);
+        } else {
+          this.camera.position.set(local.x, local.y + 1.58, local.z);
+        }
+      }
+      if (!this.pauseMenuOpen && !this.buyMenuOpen && local?.alive && now - this.lastInputAt >= 32) {
         this.sendFn({ type: "input", input: this.movementInput });
         this.lastInputAt = now;
         this.jumpPulse = false;
       }
-      if (!this.pauseMenuOpen && this.firing && local?.alive) this.fireIfReady();
+      if (!this.pauseMenuOpen && !this.buyMenuOpen && this.firing && local?.alive && ["ROUND_ACTIVE", "DEVICE_PLANTED"].includes(this.currentState.phase)) this.fireIfReady();
       this.flashMesh.material.opacity = Math.max(0, this.flashMesh.material.opacity - delta * 9);
     }
     this.gunKick = Math.max(0, this.gunKick - delta * 3.6);

@@ -1,7 +1,8 @@
 import "./style.css";
 import { GameClient } from "./game/GameClient";
 import { t } from "./i18n";
-import { PROTOCOL_VERSION, type GameState, type PublicPlayer, type ServerMessage, type Team } from "../../shared/src/protocol";
+import { PROTOCOL_VERSION, type BuyItemId, type GameState, type PublicPlayer, type ServerMessage, type Team } from "../../shared/src/protocol";
+import { BUY_PRICES } from "../../shared/src/competitiveConfig";
 
 const $ = <T extends HTMLElement>(selector: string): T => {
   const element = document.querySelector<T>(selector);
@@ -92,6 +93,7 @@ applyHudSettings();
 
 game.setCallbacks({
   scoreboard: (visible) => scoreboard.classList.toggle("is-hidden", !visible),
+  buyMenu: (visible) => $("#buy-menu").classList.toggle("is-hidden", !visible),
   toast: (text) => showToast(text),
   pause: (paused) => {
     pauseOverlay.classList.toggle("is-hidden", !paused);
@@ -257,21 +259,25 @@ function teamLabel(team: Team): string {
 function phaseLabel(phase: GameState["phase"]): string {
   const keys: Record<GameState["phase"], string> = {
     WAITING: "phase.waiting",
+    WARMUP: "phase.warmup",
+    FREEZE_TIME: "phase.freeze",
     ROUND_ACTIVE: "phase.roundActive",
+    DEVICE_PLANTED: "phase.devicePlanted",
     ROUND_END: "phase.roundEnd",
+    HALFTIME: "phase.halftime",
     MATCH_END: "phase.matchEnd",
   };
   return t(keys[phase]);
 }
 
-function appendKill(killer: string, victim: string, weapon: string): void {
+function appendKill(killer: string, victim: string, weapon: string, headshot = false): void {
   const feed = $("#killfeed");
   const row = document.createElement("div");
   row.className = "kill-entry";
   const killerEl = document.createElement("b");
   killerEl.textContent = killer;
   const weaponEl = document.createElement("i");
-  weaponEl.textContent = weapon === "AR12" ? "▰" : "◆";
+  weaponEl.textContent = (weapon === "AR12" ? "▰" : "◆") + (headshot ? " ✦" : "");
   const victimEl = document.createElement("b");
   victimEl.textContent = victim;
   row.append(killerEl, weaponEl, victimEl);
@@ -286,7 +292,7 @@ function handleGameEvent(event: import("../../shared/src/protocol").ServerEvent,
   if (event.type === "kill") {
     const killer = playerName(event.killerId, state);
     const victim = playerName(event.victimId, state);
-    appendKill(killer, victim, event.weapon);
+    appendKill(killer, victim, event.weapon, event.headshot);
     if (event.killerId === localPlayerId) showToast(t("toast.eliminated", { player: victim }));
     if (event.victimId === localPlayerId) showToast(t("toast.eliminatedBy", { player: killer }));
   }
@@ -300,6 +306,15 @@ function handleGameEvent(event: import("../../shared/src/protocol").ServerEvent,
     setCenterMessage(t("match.teamWins", { team: teamLabel(event.winner) }), "big");
     serverStatus.textContent = t("match.restartHelp", { team: teamLabel(event.winner) });
   }
+  if (event.type === "round-mvp" && event.playerId) {
+    const mvp = state?.players.find((player) => player.id === event.playerId);
+    showToast("MVP DA RODADA: " + (mvp?.name || "JOGADOR"));
+  }
+  if (event.type === "purchase" && event.playerId === localPlayerId) showToast("COMPRA CONFIRMADA · $" + event.money);
+  if (event.type === "weapon-pickup" && event.playerId === localPlayerId) showToast("AR-12 RECUPERADO · EQUIPE PARA PEGAR EQUIPAMENTO");
+  if (event.type === "device" && event.action === "planted") showToast("DISPOSITIVO PLANTADO NO SITE " + (event.site || ""));
+  if (event.type === "device" && event.action === "defused") showToast("DISPOSITIVO DESARMADO");
+  if (event.type === "halftime") showToast("INTERVALO · LADOS TROCARAM");
 }
 
 function createPlayerRow(player: PublicPlayer): HTMLElement {
@@ -311,7 +326,8 @@ function createPlayerRow(player: PublicPlayer): HTMLElement {
   if (player.id === localPlayerId) name.classList.add("you");
   const stat = document.createElement("span");
   stat.className = "player-row-stat";
-  stat.textContent = player.alive ? t("player.ready") : t("player.out");
+  stat.textContent = player.alive ? (player.ready ? t("player.ready") : "AGUARDANDO") : t("player.out");
+  if (player.ready) stat.classList.add("ready");
   row.append(name, stat);
   return row;
 }
@@ -332,6 +348,12 @@ function updatePlayerColumns(state: GameState): void {
   bravoButton.disabled = !local || local.team === "BRAVO" || state.phase !== "WAITING";
   alphaButton.textContent = local?.team === "ALPHA" ? t("lobby.yourTeam") : t("lobby.joinAlpha");
   bravoButton.textContent = local?.team === "BRAVO" ? t("lobby.yourTeam") : t("lobby.joinBravo");
+  const readyButton = $("#ready-button") as HTMLButtonElement;
+  const canReady = state.phase === "WAITING" || state.phase === "MATCH_END";
+  readyButton.classList.toggle("is-hidden", !canReady);
+  readyButton.disabled = !local || !canReady;
+  readyButton.classList.toggle("ready-button-active", !!local?.ready);
+  readyButton.querySelector("span")!.textContent = local?.ready ? t("lobby.notReady") : t("lobby.ready");
 }
 
 function updateScoreboard(state: GameState): void {
@@ -352,9 +374,15 @@ function updateScoreboard(state: GameState): void {
     kills.textContent = String(player.kills);
     const deaths = document.createElement("span");
     deaths.textContent = String(player.deaths);
+    const assists = document.createElement("span");
+    assists.textContent = String(player.assists);
+    const damage = document.createElement("span");
+    damage.textContent = String(player.damage);
+    const money = document.createElement("span");
+    money.textContent = String(player.money);
     const hp = document.createElement("span");
-    hp.textContent = player.alive ? String(player.health) : t("player.out");
-    row.append(name, team, kills, deaths, hp);
+    hp.textContent = !player.alive ? t("player.out") : player.visibleToViewer && player.health !== null ? String(player.health) : "—";
+    row.append(name, team, kills, deaths, assists, damage, money, hp);
     rows.append(row);
   }
 }
@@ -366,6 +394,8 @@ function updateView(): void {
     lobby.classList.add("is-hidden");
     hud.classList.add("is-hidden");
     pauseOverlay.classList.add("is-hidden");
+    $("#buy-menu").classList.add("is-hidden");
+    $("#phase-action").classList.add("is-hidden");
     connectCard?.classList.remove("is-hidden");
     return;
   }
@@ -375,24 +405,32 @@ function updateView(): void {
   updatePlayerColumns(state);
   updateScoreboard(state);
   $("#lobby-phase").textContent = phaseLabel(state.phase);
-  $("#lobby-help").textContent = state.hostId === localPlayerId
+  const baseHelp = state.hostId === localPlayerId
     ? state.players.length < 2
       ? t("lobby.hostHelp")
       : state.phase === "MATCH_END"
         ? t("lobby.matchComplete")
         : t("lobby.hostReady")
     : t("lobby.guestHelp");
+  const readyCount = state.players.filter((player) => player.ready).length;
+  $("#lobby-help").textContent = baseHelp + " · " + t("lobby.readyCount", { ready: readyCount, total: state.players.length });
   $("#start-button span").textContent = state.phase === "MATCH_END" ? t("lobby.restart") : t("lobby.start");
   const start = $("#start-button") as HTMLButtonElement;
-  start.disabled = state.hostId !== localPlayerId || state.players.length < 2 || (state.phase !== "WAITING" && state.phase !== "MATCH_END");
-  const playing = state.phase === "ROUND_ACTIVE" || state.phase === "ROUND_END";
-  menu.classList.toggle("is-hidden", playing);
-  lobby.classList.toggle("is-hidden", state.phase !== "WAITING" && state.phase !== "MATCH_END");
-  hud.classList.toggle("is-hidden", !playing);
-  if (playing) {
+  const everyoneReady = state.players.length >= 2 && state.players.every((player) => player.ready);
+  start.disabled = state.hostId !== localPlayerId || !everyoneReady || (state.phase !== "WAITING" && state.phase !== "MATCH_END");
+  const inMatch = state.phase !== "WAITING" && state.phase !== "MATCH_END";
+  menu.classList.toggle("is-hidden", inMatch);
+  lobby.classList.toggle("is-hidden", inMatch);
+  hud.classList.toggle("is-hidden", !inMatch);
+  const phaseAction = $("#phase-action");
+  phaseAction.classList.toggle("is-hidden", !(state.phase === "WARMUP" && state.hostId === localPlayerId));
+  if (state.phase !== "FREEZE_TIME") $("#buy-menu").classList.add("is-hidden");
+  if (inMatch) {
     $("#score-alpha").textContent = String(state.score.ALPHA);
     $("#score-bravo").textContent = String(state.score.BRAVO);
-    $("#round-label").textContent = t("hud.round", { round: String(state.round).padStart(2, "0") });
+    $("#round-label").textContent = state.round > 0
+      ? t("hud.round", { round: String(state.round).padStart(2, "0") }) + " · " + phaseLabel(state.phase)
+      : phaseLabel(state.phase);
     const minutes = Math.floor(state.secondsLeft / 60);
     const seconds = state.secondsLeft % 60;
     $("#round-timer").textContent = String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
@@ -402,10 +440,66 @@ function updateView(): void {
     $("#ammo-value").innerHTML = (local?.magazine ?? 0) + " <small>/ " + (local?.reserve ?? 0) + "</small>";
     $("#team-chip-label").textContent = local ? teamLabel(local.team) : t("hud.spectator");
     $("#team-chip-dot").className = local?.team === "BRAVO" ? "blue" : "gold";
+    $("#money-value").textContent = String(local?.money ?? 0);
+    $("#armor-value").textContent = String(local?.armor ?? 0);
+    $("#alpha-role").textContent = state.attackingTeam === "ALPHA" ? t("hud.attack") : t("hud.defense");
+    $("#bravo-role").textContent = state.attackingTeam === "BRAVO" ? t("hud.attack") : t("hud.defense");
     $("#ping-hud").textContent = pingMs + " MS";
-    if (state.phase === "ROUND_END") setCenterMessage(state.message, "big");
-    if (!local?.alive && state.phase === "ROUND_ACTIVE") setCenterMessage(t("round.eliminated"), "small");
-    else if (local?.alive && state.phase === "ROUND_ACTIVE") {
+    if (state.phase === "ROUND_END" || state.phase === "HALFTIME") setCenterMessage(state.message, "big");
+    const objectiveText = $("#objective-status");
+    let objective = state.message;
+    if (state.phase === "ROUND_ACTIVE" && local) {
+      if (state.device.status === "carried") objective = local.team === state.attackingTeam
+        ? (local.hasDevice ? t("hud.deviceCarry") : "ESCOLTE QUEM CARREGA O DISPOSITIVO")
+        : t("hud.objectiveClear");
+      else if (state.device.status === "dropped") objective = local.team === state.attackingTeam ? t("hud.deviceDropped") : "DISPOSITIVO CAÍDO · IMPEÇA A RECUPERAÇÃO";
+      else objective = t("hud.objectiveClear");
+    } else if (state.phase === "DEVICE_PLANTED") {
+      const site = state.device.site || "A";
+      objective = local?.team === state.attackingTeam
+        ? t("hud.deviceDefend", { seconds: state.device.secondsLeft }) + " · " + site
+        : t("hud.deviceDefuse", { seconds: state.device.secondsLeft }) + " · " + site;
+    }
+    objectiveText.textContent = objective;
+    const objectiveProgress = $("#objective-progress") as HTMLElement;
+    objectiveProgress.style.width = state.device.action ? Math.round(state.device.action.progress * 100) + "%" : "0%";
+    const radarDots = $("#radar-dots");
+    const dots: HTMLElement[] = [];
+    for (const teammate of state.players.filter((player) => player.alive && player.team === local?.team)) {
+      const dot = document.createElement("i");
+      dot.className = "radar-dot" + (teammate.id === localPlayerId ? " self" : "");
+      dot.style.left = Math.max(3, Math.min(97, (teammate.x + 25) * 2)) + "%";
+      dot.style.top = Math.max(3, Math.min(97, (teammate.z + 25) * 2)) + "%";
+      dots.push(dot);
+    }
+    if ((state.device.status === "dropped" || state.device.status === "planted") && state.device.x !== null && state.device.z !== null) {
+      const dot = document.createElement("i");
+      dot.className = "radar-dot device";
+      dot.style.left = Math.max(3, Math.min(97, (state.device.x + 25) * 2)) + "%";
+      dot.style.top = Math.max(3, Math.min(97, (state.device.z + 25) * 2)) + "%";
+      dots.push(dot);
+    }
+    if (local?.alive) for (const weapon of state.droppedWeapons) {
+      if (Math.hypot(local.x - weapon.x, local.z - weapon.z) > 12) continue;
+      const dot = document.createElement("i");
+      dot.className = "radar-dot weapon";
+      dot.style.left = Math.max(3, Math.min(97, (weapon.x + 25) * 2)) + "%";
+      dot.style.top = Math.max(3, Math.min(97, (weapon.z + 25) * 2)) + "%";
+      dots.push(dot);
+    }
+    radarDots.replaceChildren(...dots);
+    $("#buy-money").textContent = String(local?.money ?? 0);
+    document.querySelectorAll<HTMLButtonElement>(".buy-card").forEach((button) => {
+      const item = button.dataset.buy as BuyItemId;
+      const alreadyOwned = item === "AR12" ? !!local?.ownedWeapons.includes("AR12")
+        : item === "VEST" ? (local?.armor || 0) >= 100
+          : item === "HELMET" ? !!local?.helmet
+            : !!local?.defuseKit;
+      const roleRestricted = item === "DEFUSE_KIT" && local?.team === state.attackingTeam;
+      button.disabled = state.phase !== "FREEZE_TIME" || !local?.alive || !local || local.money < BUY_PRICES[item] || alreadyOwned || roleRestricted;
+    });
+    if (!local?.alive && ["ROUND_ACTIVE", "DEVICE_PLANTED"].includes(state.phase)) setCenterMessage(t("round.eliminated"), "small");
+    else if (local?.alive && ["ROUND_ACTIVE", "DEVICE_PLANTED"].includes(state.phase)) {
       const msg = $("#center-message");
       if (msg.textContent === t("round.eliminated")) msg.textContent = "";
     }
@@ -421,6 +515,21 @@ $("#host-button").addEventListener("click", () => connect(true));
 $("#start-button").addEventListener("click", () => {
   send({ type: "start" });
   window.setTimeout(() => game.captureMouse(), 90);
+});
+$("#ready-button").addEventListener("click", () => {
+  const local = currentState?.players.find((player) => player.id === localPlayerId);
+  if (local) send({ type: "ready", ready: !local.ready });
+});
+$("#skip-warmup-button").addEventListener("click", () => {
+  send({ type: "start" });
+  window.setTimeout(() => game.captureMouse(), 90);
+});
+$("#buy-close").addEventListener("click", () => game.closeBuyMenu());
+document.querySelectorAll<HTMLButtonElement>(".buy-card").forEach((button) => {
+  button.addEventListener("click", () => {
+    const item = button.dataset.buy as BuyItemId;
+    send({ type: "buy", item });
+  });
 });
 $("#alpha-team").addEventListener("click", () => send({ type: "team", team: "ALPHA" as Team }));
 $("#bravo-team").addEventListener("click", () => send({ type: "team", team: "BRAVO" as Team }));

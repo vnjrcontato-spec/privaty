@@ -30,7 +30,7 @@
             <p class="hero-copy" data-i18n="menu.copy">Reúna sua equipe. Domine o objetivo. Supere o adversário.<br />Uma partida, um combate, direto no navegador.</p>
             <div class="hero-meta">
               <div><span data-i18n="menu.operation">OPERAÇÃO</span><strong>IRON YARD</strong></div>
-              <div><span data-i18n="menu.mode">MODALIDADE</span><strong data-i18n="menu.modeValue">ELIMINAÇÃO EM EQUIPE</strong></div>
+              <div><span data-i18n="menu.mode">MODALIDADE</span><strong>DEMOLIÇÃO 5V5</strong></div>
               <div><span data-i18n="menu.deployment">HOSPEDAGEM</span><strong data-i18n="menu.deploymentValue">SERVIDOR ONLINE</strong></div>
             </div>
             <div class="control-strip"><span class="keycap">W</span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span><span data-i18n="controls.move">MOVER</span><span class="control-gap"></span><span class="keycap wide">MOUSE</span><span data-i18n="controls.look">OLHAR</span></div>
@@ -57,32 +57,51 @@
               <div class="team-column alpha"><div class="team-title"><span data-i18n="lobby.alpha">ALFA</span><b id="alpha-count">0</b></div><div id="alpha-players" class="player-list"></div><button id="alpha-team" class="team-button" data-i18n="lobby.joinAlpha">ENTRAR NA ALFA</button></div>
               <div class="team-column bravo"><div class="team-title"><span data-i18n="lobby.bravo">BRAVO</span><b id="bravo-count">0</b></div><div id="bravo-players" class="player-list"></div><button id="bravo-team" class="team-button" data-i18n="lobby.joinBravo">ENTRAR NA BRAVO</button></div>
             </div>
+            <button id="ready-button" class="button button-ghost start-button"><span data-i18n="lobby.ready">ESTOU PRONTO</span><b>✓</b></button>
             <button id="start-button" class="button button-primary start-button"><span data-i18n="lobby.start">INICIAR PARTIDA</span><b>→</b></button>
             <p id="lobby-help" class="lobby-help">Compartilhe o endereço do servidor com as outras pessoas.</p>
           </section>
         </main>
-        <footer class="menu-footer"><span data-i18n="footer.project">STRIKEPOINT / PROJETO INDEPENDENTE</span><span>PROTOCOLO <b>SP-2</b></span><span data-i18n="footer.controls">COMPUTADOR · TECLADO + MOUSE</span></footer>
+        <footer class="menu-footer"><span data-i18n="footer.project">STRIKEPOINT / PROJETO INDEPENDENTE</span><span>PROTOCOLO <b>SP-3</b></span><span data-i18n="footer.controls">COMPUTADOR · TECLADO + MOUSE</span></footer>
       </div>
 
       <div id="hud" class="is-hidden">
         <div class="hud-top">
-          <div class="hud-team alpha-hud"><span data-i18n="lobby.alpha">ALFA</span><b id="score-alpha">0</b></div>
-          <div class="hud-match"><span id="round-label">RODADA 01</span><b id="round-timer">01:30</b><small id="map-label">IRON YARD</small></div>
-          <div class="hud-team bravo-hud"><b id="score-bravo">0</b><span>BRAVO</span></div>
+          <div class="hud-team alpha-hud"><span><small id="alpha-role"></small><br /><span data-i18n="lobby.alpha">ALFA</span></span><b id="score-alpha">0</b></div>
+          <div class="hud-match"><span id="round-label">RODADA 01</span><b id="round-timer">01:45</b><small id="map-label">IRON YARD</small></div>
+          <div class="hud-team bravo-hud"><b id="score-bravo">0</b><span><small id="bravo-role"></small><br />BRAVO</span></div>
         </div>
+        <div id="radar" class="radar" aria-label="Radar tático">
+          <div id="radar-map" class="radar-map">
+            <i class="radar-site site-a" data-i18n="hud.siteA">A</i><i class="radar-site site-b" data-i18n="hud.siteB">B</i>
+            <span id="radar-dots"></span>
+          </div><small>IRON YARD · RADAR</small>
+        </div>
+        <div class="objective-panel"><span class="section-kicker">OBJETIVO</span><b id="objective-status">ELIMINE A EQUIPE INIMIGA</b><div class="objective-bar"><i id="objective-progress"></i></div></div>
+        <div id="phase-action" class="phase-action is-hidden"><button id="skip-warmup-button" class="button button-primary" data-i18n="hud.skipWarmup">PULAR PREPARAÇÃO</button></div>
         <div class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
         <div id="movement-debug" class="telemetry-panel is-hidden"></div>
         <div id="performance-panel" class="telemetry-panel performance-panel is-hidden"></div>
         <div id="center-message" class="center-message"></div>
         <div id="killfeed" class="killfeed"></div>
         <div class="hud-bottom">
-          <div class="health-block"><span data-i18n="hud.vitals">VIDA</span><b id="health-value">100</b><div class="health-bar"><i id="health-bar-fill"></i></div></div>
+          <div class="health-block"><span data-i18n="hud.vitals">VIDA</span><b id="health-value">100</b><div class="health-bar"><i id="health-bar-fill"></i></div><small><span data-i18n="hud.armor">COLETE</span> <b id="armor-value">0</b></small></div>
           <div class="weapon-block"><span id="weapon-name">AR-12 / FUZIL DE ASSALTO</span><b id="ammo-value">30 <small>/ 90</small></b><small id="weapon-hint" data-i18n="hud.weaponHint">1 FUZIL&nbsp;&nbsp; 2 PISTOLA&nbsp;&nbsp; R RECARREGAR</small></div>
-          <div class="team-chip"><i id="team-chip-dot"></i><span id="team-chip-label">ALFA</span><small id="ping-hud">-- MS</small></div>
+          <div class="team-chip"><i id="team-chip-dot"></i><span id="team-chip-label">ALFA</span><small><span data-i18n="hud.money">CRÉDITOS</span> $<b id="money-value">800</b></small><small id="ping-hud">-- MS</small></div>
         </div>
-        <div class="hud-tip" id="hud-tip" data-i18n="hud.tip">CLIQUE PARA CAPTURAR O MOUSE · ESC PARA PAUSAR</div>
+        <div class="hud-tip" id="hud-tip"><span data-i18n="hud.tip">CLIQUE PARA CAPTURAR O MOUSE · ESC PARA PAUSAR</span><span data-i18n="buy.pressB">B · ABRIR COMPRA</span></div>
+        <section id="buy-menu" class="buy-menu is-hidden" aria-label="Compra de equipamentos">
+          <header><div><span class="section-kicker" data-i18n="buy.title">COMPRA DE EQUIPAMENTO</span><small data-i18n="buy.subtitle">SOMENTE NA BASE · A RODADA CONTINUA NO SERVIDOR</small></div><b>$<span id="buy-money">800</span></b></header>
+          <div class="buy-grid">
+            <button class="buy-card" data-buy="AR12"><b data-i18n="buy.ar12">FUZIL AR-12</b><span>$2700</span><small data-i18n="buy.buy">COMPRAR</small></button>
+            <button class="buy-card" data-buy="VEST"><b data-i18n="buy.vest">COLETE BALÍSTICO</b><span>$650</span><small data-i18n="buy.buy">COMPRAR</small></button>
+            <button class="buy-card" data-buy="HELMET"><b data-i18n="buy.helmet">CAPACETE</b><span>$350</span><small data-i18n="buy.buy">COMPRAR</small></button>
+            <button class="buy-card" data-buy="DEFUSE_KIT"><b data-i18n="buy.kit">KIT DE DESARME</b><span>$400</span><small data-i18n="buy.buy">COMPRAR</small></button>
+          </div>
+          <button id="buy-close" class="button button-ghost"><span data-i18n="buy.close">FECHAR</span><b>×</b></button>
+        </section>
         <div id="scoreboard" class="scoreboard is-hidden">
-          <div class="scoreboard-head"><span data-i18n="scoreboard.player">JOGADOR</span><span data-i18n="scoreboard.team">EQUIPE</span><span>E</span><span>M</span><span data-i18n="scoreboard.hp">VIDA</span></div>
+          <div class="scoreboard-head"><span data-i18n="scoreboard.player">JOGADOR</span><span data-i18n="scoreboard.team">EQUIPE</span><span data-i18n="scoreboard.kills">E</span><span data-i18n="scoreboard.deaths">M</span><span data-i18n="scoreboard.assists">A</span><span data-i18n="scoreboard.damage">DANO</span><span data-i18n="scoreboard.money">$</span><span data-i18n="scoreboard.hp">VIDA</span></div>
           <div id="scoreboard-rows"></div>
         </div>
       </div>

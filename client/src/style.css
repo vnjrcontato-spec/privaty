@@ -220,9 +220,53 @@ button { color: inherit; }
 .settings-help { min-height: 31px; margin: 11px 0 17px; color: #69756e; font: 8px/1.55 var(--mono); }
 .settings-back { width: 100%; }
 .pause-panel { max-height: 94vh; overflow-y: auto; }
-.telemetry-panel { position: absolute; z-index: 2; top: 78px; left: 22px; max-width: min(520px, calc(100vw - 40px)); padding: 9px 11px; color: #d9dfd5; background: rgba(7, 11, 12, .78); border: 1px solid rgba(208,205,184,.2); box-shadow: 0 5px 18px #0007; font: 9px/1.6 var(--mono); letter-spacing: .04em; white-space: pre-line; }
-.performance-panel { left: auto; right: 22px; color: #a8c6c6; }
+.telemetry-panel { position: absolute; z-index: 2; top: 232px; left: 22px; max-width: min(520px, calc(100vw - 40px)); padding: 9px 11px; color: #d9dfd5; background: rgba(7, 11, 12, .78); border: 1px solid rgba(208,205,184,.2); box-shadow: 0 5px 18px #0007; font: 9px/1.6 var(--mono); letter-spacing: .04em; white-space: pre-line; }
+.performance-panel { left: auto; right: 22px; top: 232px; color: #a8c6c6; }
 .toast { position: fixed; z-index: 9; left: 50%; top: 72px; transform: translateX(-50%); padding: 11px 15px; color: #f0e8d4; background: rgba(10,14,15,.94); border: 1px solid #8f703b; box-shadow: 0 8px 28px #0009; font: 10px var(--mono); letter-spacing: .08em; pointer-events: none; }
+
+.hud-team > span { line-height: 1.03; text-align: center; }
+.hud-team > span small { color: #87918a; font: 7px var(--mono); letter-spacing: .11em; }
+.health-block > small { margin-top: 5px; color: #87918a; font: 8px var(--mono); }
+.health-block > small b, #money-value { color: #e6c16c; font-weight: 500; }
+.team-chip small b { color: #e6c16c; font-weight: 500; }
+.hud-tip { display: flex; gap: 18px; white-space: nowrap; }
+.radar { position: absolute; top: 78px; left: 22px; width: 164px; padding: 7px; background: rgba(7,11,12,.78); border: 1px solid rgba(208,205,184,.2); box-shadow: 0 5px 18px #0007; }
+.radar-map { height: 105px; position: relative; overflow: hidden; background: linear-gradient(90deg, transparent 49.7%, #87918a36 50%, transparent 50.3%), linear-gradient(0deg, transparent 49.7%, #87918a36 50%, transparent 50.3%), #101719; border: 1px solid #35403d; }
+.radar-map::before, .radar-map::after { content: ""; position: absolute; left: 0; right: 0; top: 33%; height: 1px; background: #7c898033; }
+.radar-map::after { top: 66%; }
+.radar > small { display: block; margin-top: 5px; color: #78847d; text-align: center; font: 7px var(--mono); letter-spacing: .12em; }
+.radar-site { position: absolute; top: 50%; transform: translate(-50%,-50%); width: 21px; height: 21px; display: grid; place-items: center; border: 1px solid #d8ae5e; border-radius: 50%; color: #f4d184; background: #342a16; font: 8px var(--mono); font-style: normal; z-index: 1; }
+.radar-site.site-a { left: 17%; top: 36%; }
+.radar-site.site-b { left: 83%; top: 64%; border-color: #7eb8ca; color: #a9e0eb; background: #172c32; }
+.radar-dot { position: absolute; z-index: 2; width: 6px; height: 6px; transform: translate(-50%,-50%); border-radius: 50%; background: #e6b249; box-shadow: 0 0 5px #e6b249a6; }
+.radar-dot.self { width: 8px; height: 8px; background: #f7f1dc; border: 1px solid #101313; }
+.radar-dot.device { width: 8px; height: 8px; background: #ec6550; box-shadow: 0 0 8px #e34b37; }
+.radar-dot.weapon { width: 5px; height: 5px; background: #9bc1b4; box-shadow: 0 0 5px #9bc1b488; }
+.objective-panel { position: absolute; top: 81px; right: 24px; width: min(270px, 38vw); padding: 9px 12px; background: rgba(7,11,12,.76); border: 1px solid rgba(208,205,184,.2); box-shadow: 0 5px 18px #0007; }
+.objective-panel .section-kicker { font-size: 7px; }
+.objective-panel > b { display: block; margin-top: 4px; color: #e4e1d5; font: 9px/1.35 var(--mono); letter-spacing: .05em; }
+.objective-bar { height: 3px; margin-top: 7px; background: #39403a; }
+.objective-bar i { display: block; width: 0; height: 100%; background: var(--gold); transition: width .1s linear; }
+.phase-action { position: absolute; z-index: 4; top: 116px; left: 50%; transform: translateX(-50%); pointer-events: auto; }
+.phase-action .button { min-height: 35px; font-size: 9px; }
+.buy-menu { position: absolute; z-index: 7; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(540px, 92vw); padding: 18px; color: #f1efe5; background: rgba(8,12,14,.96); border: 1px solid #71613c; box-shadow: 0 22px 80px #000c; pointer-events: auto; }
+.buy-menu > header { display: flex; justify-content: space-between; gap: 14px; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.buy-menu > header small { display: block; margin-top: 5px; color: #7c8980; font: 7px var(--mono); }
+.buy-menu > header > b { color: #e6bd63; font: 600 20px var(--mono); }
+.buy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 13px 0; }
+.buy-card { min-height: 90px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; padding: 11px; border: 1px solid #35403c; background: #111719; color: #e7e6db; cursor: pointer; text-align: left; }
+.buy-card:hover:not(:disabled) { border-color: var(--gold); background: #1c211e; }
+.buy-card:disabled { opacity: .38; cursor: not-allowed; }
+.buy-card b { font: 500 10px var(--mono); }
+.buy-card span { color: #e4bd65; font: 11px var(--mono); }
+.buy-card small { color: #748078; font: 7px var(--mono); letter-spacing: .1em; }
+.buy-menu > .button { width: 100%; min-height: 37px; }
+.scoreboard { width: min(760px, 96vw); }
+.scoreboard-head, .scoreboard-row { grid-template-columns: minmax(100px, 2fr) 1.2fr repeat(5, minmax(28px, .42fr)) minmax(42px, .6fr); }
+.scoreboard-head span:not(:first-child), .scoreboard-row span:not(:first-child) { text-align: center; }
+.scoreboard-row span:nth-child(7) { color: #d4b85e; }
+.player-row-stat.ready { color: #a8be78; }
+.ready-button-active { border-color: #8eac64; color: #bed597; }
 
 @media (max-width: 820px) {
   #menu-overlay { padding: 0 5vw; }
@@ -271,6 +315,13 @@ button { color: inherit; }
   .hud-tip { bottom: 5px; font-size: 7px; }
   .killfeed { top: 68px; right: 9px; }
   .kill-entry { min-width: 150px; font-size: 8px; }
+  .radar { top: 63px; left: 8px; width: 120px; padding: 5px; }
+  .radar-map { height: 74px; }
+  .objective-panel { top: 63px; right: 8px; width: min(178px, 46vw); padding: 7px; }
+  .objective-panel > b { font-size: 7px; }
+  .hud-tip { bottom: 3px; gap: 8px; font-size: 6px; }
+  .hud-tip span:last-child { display: none; }
+  .scoreboard-head, .scoreboard-row { grid-template-columns: minmax(78px, 1.6fr) .9fr repeat(5, minmax(22px, .4fr)) minmax(35px, .55fr); gap: 2px; padding: 7px 4px; font-size: 7px; }
   .pause-panel { padding: 23px 20px 17px; }
   .pause-panel h2 { font-size: 56px; }
   .setting-row { gap: 10px; }
