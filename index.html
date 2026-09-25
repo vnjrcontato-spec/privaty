@@ -19,7 +19,7 @@
           <div class="topbar-right">
             <span class="status-dot"></span><span id="connection-label">OFFLINE</span>
             <span class="top-divider"></span>
-            <span class="build-label">BUILD 0.1.0 <b>LAN MVP</b></span>
+            <span class="build-label">BUILD 0.1.0 <b>WEB MVP</b></span>
           </div>
         </header>
 
@@ -31,18 +31,18 @@
             <div class="hero-meta">
               <div><span>OPERATION</span><strong>IRON YARD</strong></div>
               <div><span>MODE</span><strong>TEAM ELIMINATION</strong></div>
-              <div><span>DEPLOYMENT</span><strong>LOCAL NETWORK</strong></div>
+              <div><span>DEPLOYMENT</span><strong>NETWORK SERVER</strong></div>
             </div>
             <div class="control-strip"><span class="keycap">W</span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span><span>MOVE</span><span class="control-gap"></span><span class="keycap wide">MOUSE</span><span>LOOK</span></div>
           </section>
 
           <aside class="connect-card">
-            <div class="card-header"><div><span class="section-kicker">DEPLOYMENT</span><h2>Join the fight</h2></div><span class="signal-mark">01 <b>/</b> LAN</span></div>
+            <div class="card-header"><div><span class="section-kicker">NETWORK ACCESS</span><h2>Join the fight</h2></div><span class="signal-mark">01 <b>/</b> SERVER</span></div>
             <label class="field-label" for="player-name">CALLSIGN</label>
             <input id="player-name" maxlength="18" value="RAVEN" autocomplete="nickname" />
             <label class="field-label" for="server-address">SERVER ADDRESS</label>
-            <div class="address-wrap"><span class="address-icon">⌁</span><input id="server-address" value="localhost:3000" autocomplete="url" /></div>
-            <p class="field-help">Use the host PC's LAN IP, for example <b>192.168.0.10:3000</b>.</p>
+            <div class="address-wrap"><span class="address-icon">⌁</span><input id="server-address" value="" placeholder="This website's server" autocomplete="url" /></div>
+            <p class="field-help">The hosted server is selected automatically. For a LAN match, enter the host's IP, for example <b>192.168.0.10:3000</b>.</p>
             <div class="button-row">
               <button id="join-button" class="button button-ghost"><span>JOIN SERVER</span><b>↗</b></button>
               <button id="host-button" class="button button-primary"><span>HOST MATCH</span><b>→</b></button>
@@ -51,7 +51,7 @@
           </aside>
 
           <section id="lobby-panel" class="lobby-panel is-hidden">
-            <div class="lobby-heading"><div><span class="section-kicker">SERVER // LOCAL-01</span><h2>Match lobby</h2></div><span id="lobby-phase" class="phase-badge">WAITING</span></div>
+            <div class="lobby-heading"><div><span class="section-kicker">SERVER // NETWORK-01</span><h2>Match lobby</h2></div><span id="lobby-phase" class="phase-badge">WAITING</span></div>
             <div class="lobby-stats"><span>MAP <b>IRON YARD</b></span><span>MODE <b>ELIMINATION</b></span><span>PING <b id="ping-value">-- ms</b></span></div>
             <div class="team-columns">
               <div class="team-column alpha"><div class="team-title"><span>ALPHA</span><b id="alpha-count">0</b></div><div id="alpha-players" class="player-list"></div><button id="alpha-team" class="team-button">JOIN ALPHA</button></div>
