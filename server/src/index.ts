@@ -161,6 +161,14 @@ function resetPlayerForRound(player: Player, index: number): void {
 }
 
 function startRound(): void {
+  const counts = teamCounts();
+  if (players.size < 2 || counts.ALPHA === 0 || counts.BRAVO === 0) {
+    phase = "WAITING";
+    secondsLeft = ROUND_LENGTH_SECONDS;
+    message = "Waiting for both teams";
+    broadcastState();
+    return;
+  }
   round += 1;
   phase = "ROUND_ACTIVE";
   secondsLeft = ROUND_LENGTH_SECONDS;
@@ -227,6 +235,26 @@ function checkElimination(): void {
   for (const player of players.values()) if (player.alive) alive[player.team] += 1;
   if (alive.ALPHA === 0) endRound("BRAVO", "Team Alpha eliminated");
   else if (alive.BRAVO === 0) endRound("ALPHA", "Team Bravo eliminated");
+}
+
+function removePlayer(player: Player): void {
+  if (players.get(player.id) !== player) return;
+  players.delete(player.id);
+  console.log("[LEAVE] " + player.name + " disconnected");
+  broadcastEvent({ type: "player-left", playerId: player.id, name: player.name });
+  if (hostId === player.id) hostId = players.keys().next().value || null;
+  if (players.size === 0) {
+    phase = "WAITING";
+    round = 0;
+    secondsLeft = ROUND_LENGTH_SECONDS;
+    roundEndAt = 0;
+    matchScore = { ALPHA: 0, BRAVO: 0 };
+    message = "Waiting for players";
+  } else {
+    message = player.name + " disconnected";
+    checkElimination();
+  }
+  broadcastState();
 }
 
 function directionFor(player: Player): { x: number; y: number; z: number } {
@@ -333,6 +361,7 @@ function traceShot(shooter: Player, now: number): void {
 }
 
 function processMessage(player: Player, messageValue: ClientMessage): void {
+  if (players.get(player.id) !== player) return;
   switch (messageValue.type) {
     case "input": {
       if (!messageValue.input || phase !== "ROUND_ACTIVE" || !player.alive) return;
@@ -381,6 +410,10 @@ function processMessage(player: Player, messageValue: ClientMessage): void {
       return;
     case "start":
       startMatch(player.id);
+      return;
+    case "leave":
+      removePlayer(player);
+      player.socket.close(1000, "returned to lobby");
       return;
     case "ping":
       send(player.socket, { type: "pong", sentAt: messageValue.sentAt, serverTime: Date.now() });
@@ -491,16 +524,12 @@ websocketServer.on("connection", (socket) => {
         socket.close(1008, "server full");
         return;
       }
-      if (phase !== "WAITING" && phase !== "MATCH_END") {
-        send(socket, { type: "error", message: "Match is in progress. Join after the current match." });
-        socket.close(1008, "match in progress");
-        return;
-      }
       const id = randomUUID();
       const requestedHost = payload.host && hostId === null;
       if (hostId === null || !players.has(hostId)) hostId = id;
       const team = chooseTeam();
-      const spawn = spawnPosition(team, teamCounts()[team]);
+      const spawnIndex = teamCounts()[team];
+      const spawn = spawnPosition(team, spawnIndex);
       player = {
         id,
         name: safeName(payload.name),
@@ -524,6 +553,7 @@ websocketServer.on("connection", (socket) => {
         lastShot: 0,
         lastAction: 0,
       };
+      if (phase === "ROUND_ACTIVE") resetPlayerForRound(player, spawnIndex);
       if (requestedHost && players.size === 0) hostId = id;
       players.set(id, player);
       send(socket, { type: "welcome", playerId: id, hostId, roomId: "LOCAL-01", protocolVersion: PROTOCOL_VERSION });
@@ -538,20 +568,7 @@ websocketServer.on("connection", (socket) => {
 
   socket.on("close", () => {
     if (!player) return;
-    players.delete(player.id);
-    console.log("[LEAVE] " + player.name + " disconnected");
-    broadcastEvent({ type: "player-left", playerId: player.id, name: player.name });
-    if (hostId === player.id) hostId = players.keys().next().value || null;
-    if (players.size === 0) {
-      phase = "WAITING";
-      round = 0;
-      matchScore = { ALPHA: 0, BRAVO: 0 };
-      message = "Waiting for players";
-    } else {
-      message = player.name + " disconnected";
-      checkElimination();
-    }
-    broadcastState();
+    removePlayer(player);
   });
   socket.on("error", (error) => console.warn("[ERROR] WebSocket", error.message));
 });
