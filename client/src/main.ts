@@ -9,7 +9,6 @@ const $ = <T extends HTMLElement>(selector: string): T => {
 };
 
 const canvas = $("#game-canvas") as HTMLCanvasElement;
-const game = new GameClient(canvas);
 const menu = $("#menu-overlay");
 const hud = $("#hud");
 const lobby = $("#lobby-panel");
@@ -34,6 +33,7 @@ serverAddressInput.value = window.location.port === "5173"
   ? window.location.hostname + ":3000"
   : window.location.host;
 playerNameInput.value = localStorage.getItem("strikepoint_callsign") || "RAVEN";
+const game = new GameClient(canvas);
 game.setCallbacks({
   scoreboard: (visible) => scoreboard.classList.toggle("is-hidden", !visible),
   toast: (text) => showToast(text),
