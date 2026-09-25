@@ -78,11 +78,48 @@
           <div class="weapon-block"><span id="weapon-name">AR-12 / ASSAULT RIFLE</span><b id="ammo-value">30 <small>/ 90</small></b><small id="weapon-hint">1 RIFLE&nbsp;&nbsp; 2 SIDEARM&nbsp;&nbsp; R RELOAD</small></div>
           <div class="team-chip"><i id="team-chip-dot"></i><span id="team-chip-label">ALPHA</span><small id="ping-hud">-- MS</small></div>
         </div>
-        <div class="hud-tip" id="hud-tip">CLICK TO CAPTURE MOUSE · ESC TO RELEASE</div>
+        <div class="hud-tip" id="hud-tip">CLICK TO CAPTURE MOUSE · ESC FOR PAUSE MENU</div>
         <div id="scoreboard" class="scoreboard is-hidden">
           <div class="scoreboard-head"><span>PLAYER</span><span>TEAM</span><span>K</span><span>D</span><span>HP</span></div>
           <div id="scoreboard-rows"></div>
         </div>
+      </div>
+      <div id="pause-overlay" class="pause-overlay is-hidden" aria-hidden="true">
+        <section class="pause-panel" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+          <div class="pause-kicker"><span class="eyebrow-line"></span>STRIKEPOINT // FIELD MENU</div>
+          <div id="pause-home">
+            <h2 id="pause-title">PAUSED</h2>
+            <p class="pause-note">This menu pauses your controls. The match continues for everyone.</p>
+            <div class="pause-actions">
+              <button id="resume-button" class="button button-primary"><span>RESUME MATCH</span><b>→</b></button>
+              <button id="settings-button" class="button button-ghost"><span>SETTINGS</span><b>⚙</b></button>
+              <button id="return-lobby-button" class="button button-ghost"><span>RETURN TO LOBBY</span><b>↩</b></button>
+              <button id="disconnect-button" class="button button-danger"><span>DISCONNECT</span><b>×</b></button>
+            </div>
+            <div class="pause-footer"><span>ESC</span> RESUME <i></i> SERVER ROUND KEEPS RUNNING</div>
+          </div>
+          <div id="settings-panel" class="is-hidden">
+            <div class="settings-heading"><div><span class="section-kicker">PLAYER PREFERENCES</span><h3>Settings</h3></div><span class="settings-tab">CONTROLS + VIDEO</span></div>
+            <label class="setting-row" for="mouse-sensitivity">
+              <span><b>MOUSE SENSITIVITY</b><small>Horizontal and vertical look speed</small></span>
+              <span class="setting-control"><output id="sensitivity-value" for="mouse-sensitivity">1.0</output><input id="mouse-sensitivity" type="range" min="0.1" max="5" step="0.1" value="1" /></span>
+            </label>
+            <label class="setting-row" for="invert-y">
+              <span><b>INVERT Y</b><small>Reverse vertical mouse look</small></span>
+              <input id="invert-y" class="setting-toggle" type="checkbox" />
+            </label>
+            <label class="setting-row" for="graphics-quality">
+              <span><b>GRAPHICS QUALITY</b><small>Adjust rendering cost and shadow detail</small></span>
+              <select id="graphics-quality" class="setting-select">
+                <option value="LOW">LOW</option>
+                <option value="BALANCED" selected>BALANCED</option>
+                <option value="HIGH">HIGH</option>
+              </select>
+            </label>
+            <p class="settings-help">Balanced is recommended for most computers. Lower presets reduce render resolution and disable shadows.</p>
+            <button id="settings-back-button" class="button button-primary settings-back"><span>BACK TO PAUSE MENU</span><b>←</b></button>
+          </div>
+        </section>
       </div>
       <div id="toast" class="toast is-hidden"></div>
     </div>
